@@ -20,7 +20,7 @@ Este repositório contêm a API e suas respectivas rotas relacionadas ao backend
 
 ## 📁 Estrutura do Projeto
 
-```
+```bash
 to-do
 ```
 
@@ -29,7 +29,7 @@ to-do
 1. **</>:**
 
     ```bash
-    
+    todo
     ```
 
 ## 📝 Notas de Desenvolvimento
