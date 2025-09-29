@@ -30,4 +30,4 @@ export class AuthController {
   @Post('verify-token')
   async verifyToken(@Body() body: TokenVerifyDto, @Res({ passthrough: true }) res) {
     return this.authService.verifyToken(body.accessToken, body.refreshToken, res);
-}
+}}
