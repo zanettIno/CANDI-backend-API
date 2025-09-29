@@ -7,6 +7,7 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
+
   async register(@Body() body) {
     return this.authService.register(body);
   }
@@ -29,5 +30,4 @@ export class AuthController {
   @Post('verify-token')
   async verifyToken(@Body() body: TokenVerifyDto, @Res({ passthrough: true }) res) {
     return this.authService.verifyToken(body.accessToken, body.refreshToken, res);
-  }
 }

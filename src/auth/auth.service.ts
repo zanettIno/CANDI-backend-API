@@ -72,6 +72,7 @@ export class AuthService {
     const user = result.Items?.[0];
     if (!user) throw new BadRequestException('Usuário não encontrado');
 
+
     const passwordMatch = await bcrypt.compare(data.password, user.profile_password);
     if (!passwordMatch) throw new UnauthorizedException('Senha incorreta');
 
@@ -79,6 +80,7 @@ export class AuthService {
       { id: user.profile_id, email: user.profile_email },
       { expiresIn: '30m' },
     );
+    
     const refreshToken = await this.jwtService.signAsync({ id: user.profile_id, email: user.profile_email });
 
     res.cookie('ACCESS_TOKEN', accessToken, {
