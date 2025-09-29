@@ -17,11 +17,11 @@ export class AuthService {
   ) {}
 
   async register(user: {
-    name: string;
-    nickname: string;
-    email: string;
-    password: string;
-    birth_date: string;
+    profile_name: string;
+    profile_nickname: string;
+    profile_email: string;
+    profile_password: string;
+    profile_birth_date: string;
     cancer_type_id: number;
   }) {
     // Verificar se email já existe usando índice secundário
@@ -29,8 +29,8 @@ export class AuthService {
       new QueryCommand({
         TableName: this.tableName,
         IndexName: 'EmailIndex',
-        KeyConditionExpression: 'email = :email',
-        ExpressionAttributeValues: { ':email': user.email },
+        KeyConditionExpression: 'profile_email = :profile_email',
+        ExpressionAttributeValues: { ':profile_email': user.profile_email },
       }),
     );
 
@@ -39,15 +39,15 @@ export class AuthService {
     }
 
     // Hash da senha
-    const hashedPassword = await bcrypt.hash(user.password, 10);
+    const hashedPassword = await bcrypt.hash(user.profile_password, 10);
 
     const newUser = {
       profile_id: randomUUID(),
-      name: user.name,
-      nickname: user.nickname,
-      email: user.email,
+      name: user.profile_name,
+      nickname: user.profile_nickname,
+      email: user.profile_email,
       password: hashedPassword,
-      birth_date: user.birth_date,
+      birth_date: user.profile_birth_date,
       cancer_type_id: user.cancer_type_id,
     };
 

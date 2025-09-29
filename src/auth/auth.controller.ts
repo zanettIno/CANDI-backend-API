@@ -9,11 +9,11 @@ export class AuthController {
   async register(
     @Body()
     body: {
-      name: string;
-      nickname: string;
-      email: string;
-      password: string;
-      birth_date: string;
+      profile_name: string;
+      profile_nickname: string;
+      profile_email: string;
+      profile_password: string;
+      profile_birth_date: string;
       cancer_type_id: number;
     },
   ) {
