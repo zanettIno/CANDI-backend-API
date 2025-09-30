@@ -43,7 +43,6 @@ describe('EmergencyContactsService', () => {
       const updatedAttributes = {
         emergency_contact_name: 'Maria Silva',
       };
-      // Simula uma resposta de sucesso do DynamoDB
       ddbMock.on(UpdateCommand).resolves({ Attributes: updatedAttributes });
 
       const result = await service.update(userId, contactDto);
@@ -51,7 +50,6 @@ describe('EmergencyContactsService', () => {
       expect(result.message).toBe('Contato de emergência atualizado com sucesso!');
       expect(result.updatedAttributes).toEqual(updatedAttributes);
 
-      // Verifica se o comando foi chamado com os parâmetros corretos
       expect(ddbMock).toHaveReceivedCommandWith(UpdateCommand, {
         TableName: 'CANDIUsers',
         Key: { user_id: userId },
@@ -65,10 +63,8 @@ describe('EmergencyContactsService', () => {
     });
 
     it('should throw NotFoundException if user does not exist', async () => {
-      // Simula uma resposta onde o item não foi encontrado (sem atributos retornados)
       ddbMock.on(UpdateCommand).resolves({ Attributes: undefined });
 
-      // Esperamos que a chamada ao método `update` rejeite com um NotFoundException
       await expect(service.update(userId, contactDto)).rejects.toThrow(
         NotFoundException,
       );

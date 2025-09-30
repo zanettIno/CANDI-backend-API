@@ -8,7 +8,6 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
   controllers: [EmergencyContactsController],
   providers: [
     EmergencyContactsService,
-    // Precisamos prover o cliente do DynamoDB para este módulo também!
     {
       provide: 'DYNAMO_CLIENT',
       useFactory: () => {

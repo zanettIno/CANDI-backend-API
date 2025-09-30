@@ -44,9 +44,7 @@ describe('EmergencyContactsController', () => {
 
       const result = await controller.update(userId, contactDto);
 
-      // Verifica se o método do serviço foi chamado com o ID e o DTO
       expect(mockService.update).toHaveBeenCalledWith(userId, contactDto);
-      // Verifica se o controller retornou o resultado do serviço
       expect(result).toEqual(expectedResult);
     });
   });
