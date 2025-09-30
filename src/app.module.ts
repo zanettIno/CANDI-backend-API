@@ -4,6 +4,7 @@ import { DynamoDBModule } from './dynamodb/dynamodb.module';
 import { AuthModule } from './auth/auth.module';
 import { SymptomsModule } from './schedule/symptoms/symptoms.module';
 import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts.module';
+import { JournalModule } from './journal/journal.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts
     AuthModule,
     SymptomsModule,
     EmergencyContactsModule,
+    JournalModule,
   ],
 })
 export class AppModule {}
