@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Res, Get } from '@nestjs/common';
+import { Controller, Post, Body, Res, Get, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthDto, RefreshDto, TokenVerifyDto } from './auth.dto';
+import { AuthGuard } from './auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -13,8 +14,8 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() body: AuthDto, @Res({ passthrough: true }) res) {
-    return this.authService.login(body, res);
+  async login(@Body() body: AuthDto) {
+    return this.authService.login(body);
   }
 
   @Get('logout')
@@ -30,4 +31,10 @@ export class AuthController {
   @Post('verify-token')
   async verifyToken(@Body() body: TokenVerifyDto, @Res({ passthrough: true }) res) {
     return this.authService.verifyToken(body.accessToken, body.refreshToken, res);
-}}
+}
+  @UseGuards(AuthGuard)
+  @Get('me')
+  getProfile(@Req() req) {
+    return this.authService.getProfile(req.user.id);
+  }
+}

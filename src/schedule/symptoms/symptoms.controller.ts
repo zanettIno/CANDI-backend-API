@@ -6,12 +6,12 @@ export class SymptomsController {
   constructor(private readonly symptomsService: SymptomsService) {}
 
   @Post()
-  create(@Body() body: { profile_id: string; description: string }) {
+  create(@Body() body: { email: string; description: string }) {
     return this.symptomsService.addSymptom(body);
   }
 
-  @Get(':profile_id')
-  findAll(@Param('profile_id') profile_id: string) {
-    return this.symptomsService.listSymptomsByProfile(profile_id);
+  @Get(':email')
+  findAll(@Param('email') email: string) {
+    return this.symptomsService.listSymptomsByEmail(email);
   }
 }

@@ -4,7 +4,7 @@ import { SymptomsService } from './symptoms.service';
 
 const mockSymptomsService = {
   addSymptom: jest.fn(),
-  listSymptomsByProfile: jest.fn(),
+  listSymptomsByEmail: jest.fn(),
 };
 
 describe('SymptomsController', () => {
@@ -30,8 +30,8 @@ describe('SymptomsController', () => {
 
   describe('create', () => {
     it('should call addSymptom from service', async () => {
-      const dto = { profile_id: 'paciente-123', description: 'Nausea' };
-      const expectedResult = { message: 'Success', symptom: { ...dto, symptom_id: 'uuid', created_at: 'date' } };
+      const dto = { email: 'paciente@teste.com', description: 'Nausea' };
+      const expectedResult = { message: 'Success', symptom: { ...dto, symptom_id: 'uuid', created_at: 'date', profile_id: 'pid-123' } };
       
       mockSymptomsService.addSymptom.mockResolvedValue(expectedResult);
 
@@ -43,15 +43,15 @@ describe('SymptomsController', () => {
   });
 
   describe('findAll', () => {
-    it('should call listSymptomsByProfile from service', async () => {
-        const profileId = 'paciente-456';
+    it('should call listSymptomsByEmail from service', async () => {
+        const email = 'paciente@teste.com';
         const expectedSymptoms = [{ description: 'Fadiga' }];
 
-        mockSymptomsService.listSymptomsByProfile.mockResolvedValue(expectedSymptoms);
+        mockSymptomsService.listSymptomsByEmail.mockResolvedValue(expectedSymptoms);
 
-        const result = await controller.findAll(profileId);
+        const result = await controller.findAll(email);
         
-        expect(mockSymptomsService.listSymptomsByProfile).toHaveBeenCalledWith(profileId);
+        expect(mockSymptomsService.listSymptomsByEmail).toHaveBeenCalledWith(email);
         expect(result).toEqual(expectedSymptoms);
     });
   });

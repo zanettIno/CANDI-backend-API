@@ -5,6 +5,7 @@ import {
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
+import { AuthService } from '../../auth/auth.service'; 
 
 @Injectable()
 export class SymptomsService {
@@ -13,19 +14,20 @@ export class SymptomsService {
   constructor(
     @Inject('DYNAMO_CLIENT')
     private readonly db: DynamoDBDocumentClient,
+    private readonly authService: AuthService,
   ) {}
 
-  async addSymptom(symptom: {
-    profile_id: string;   
-    description: string;  
-  }) {
-    if (!symptom.profile_id || !symptom.description) {
-      throw new BadRequestException('profile_id e description são obrigatórios');
+  async addSymptom(symptom: { email: string; description: string }) {
+    if (!symptom.email || !symptom.description) {
+      throw new BadRequestException('email e description são obrigatórios');
     }
+
+    const profile = await this.authService.findProfileByEmail(symptom.email);
 
     const newSymptom = {
       symptoms_id: randomUUID(),
-      profile_id: symptom.profile_id,
+      profile_id: profile.profile_id,     
+      email: profile.profile_email,      
       description: symptom.description,
       created_at: new Date().toISOString(),
     };
@@ -43,14 +45,13 @@ export class SymptomsService {
     };
   }
 
-  async listSymptomsByProfile(profile_id: string) {
+  async listSymptomsByEmail(email: string) {
     const result = await this.db.send(
       new QueryCommand({
         TableName: this.tableName,
-        KeyConditionExpression: 'profile_id = :pid',
-        ExpressionAttributeValues: {
-          ':pid': profile_id,
-        },
+        IndexName: 'EmailIndex',
+        KeyConditionExpression: 'email = :email',
+        ExpressionAttributeValues: { ':email': email },
       }),
     );
 

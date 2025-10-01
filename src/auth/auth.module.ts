@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { DynamoDBModule } from '../dynamodb/dynamodb.module';
 import { JwtModule } from '@nestjs/jwt';
+import { AuthGuard } from './auth.guard';
 
 @Module({
   imports: [
@@ -12,7 +13,8 @@ import { JwtModule } from '@nestjs/jwt';
       signOptions: { expiresIn: '30m' },
     }),
   ],
-  providers: [AuthService],
+  providers: [AuthService, AuthGuard],
   controllers: [AuthController],
+  exports: [AuthService],
 })
 export class AuthModule {}

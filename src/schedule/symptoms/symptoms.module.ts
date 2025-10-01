@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { SymptomsController } from './symptoms.controller';
 import { SymptomsService } from './symptoms.service';
-
+import { AuthModule } from '../../auth/auth.module'; 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 @Module({
+  imports: [AuthModule], 
   controllers: [SymptomsController],
   providers: [
     SymptomsService,
