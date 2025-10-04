@@ -6,6 +6,8 @@ import { SymptomsModule } from './schedule/symptoms/symptoms.module';
 import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts.module';
 import { JournalModule } from './journal/journal.module';
 import { MedicinesModule } from './schedule/medicines/medicines.module';
+import { ProfileImageModule } from './s3/profile-image.module';
+
 
 @Module({
   imports: [
@@ -16,6 +18,7 @@ import { MedicinesModule } from './schedule/medicines/medicines.module';
     EmergencyContactsModule,
     JournalModule,
     MedicinesModule,
+    ProfileImageModule,
   ],
 })
 export class AppModule {}
