@@ -30,7 +30,6 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Get('me')
   getProfile(@Req() req) {
-    // req.user já tem o usuário completo
     return req.user;
   }
 }

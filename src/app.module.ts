@@ -7,6 +7,7 @@ import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts
 import { JournalModule } from './journal/journal.module';
 import { MedicinesModule } from './schedule/medicines/medicines.module';
 import { ProfileImageModule } from './s3/profile-image.module';
+import { RecuperarModule } from './auth/recovery/recovery.module';
 
 
 @Module({
@@ -19,6 +20,7 @@ import { ProfileImageModule } from './s3/profile-image.module';
     JournalModule,
     MedicinesModule,
     ProfileImageModule,
+    RecuperarModule,
   ],
 })
 export class AppModule {}
