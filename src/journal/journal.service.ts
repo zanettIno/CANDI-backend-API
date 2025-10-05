@@ -5,7 +5,9 @@ import {
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
+
 import { AuthService } from '../auth/auth.service'; // Importe o AuthService
+
 
 @Injectable()
 export class JournalService {
@@ -42,6 +44,7 @@ export class JournalService {
   }
 
   // O método agora busca por e-mail
+
   async getFeelingsByEmail(email: string) {
     // Valida se o usuário com este e-mail existe
     await this.authService.findProfileByEmail(email);
