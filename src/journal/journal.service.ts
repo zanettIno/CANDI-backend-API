@@ -5,7 +5,12 @@ import {
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
-import { AuthService } from '../auth/auth.service'; // 1. Importe o AuthService
+
+// Interface para o objeto de usuário que o AuthGuard anexa
+interface AuthenticatedUser {
+  profile_id: string;
+  profile_email: string;
+}
 
 @Injectable()
 export class JournalService {
@@ -14,18 +19,17 @@ export class JournalService {
   constructor(
     @Inject('DYNAMO_CLIENT')
     private readonly db: DynamoDBDocumentClient,
-    private readonly authService: AuthService, // 2. Injete o AuthService
-  ) {}
+  ) {} // O AuthService foi removido, o Guard faz a validação
 
-  // 3. O método agora recebe o e-mail no corpo (payload)
-  async addFeeling(payload: { email: string; happiness: number; observation: string }) {
-    // Valida o usuário e obtém o perfil completo a partir do e-mail
-    const profile = await this.authService.findProfileByEmail(payload.email);
-
+  async addFeeling(user: AuthenticatedUser, payload: { happiness: number; observation: string }) {
+    if (!payload.observation || payload.observation.trim() === '') {
+      throw new BadRequestException('A observação é obrigatória.');
+    }
+    
     const newFeeling = {
       feeling_id: randomUUID(),
-      profile_id: profile.profile_id, // Guarda o ID do perfil encontrado
-      email: profile.profile_email,   // Guarda o e-mail validado
+      profile_id: user.profile_id,
+      email: user.profile_email,
       happiness: payload.happiness,
       observation: payload.observation,
       created_at: new Date().toISOString(),
@@ -41,22 +45,17 @@ export class JournalService {
     return newFeeling;
   }
 
-  // 4. O método agora busca por e-mail
-  async getFeelingsByEmail(email: string) {
-    // Valida se o usuário com este e-mail existe
-    await this.authService.findProfileByEmail(email);
-
+  async getFeelingsByUser(user: AuthenticatedUser) {
     const result = await this.db.send(
       new QueryCommand({
         TableName: this.tableName,
         IndexName: 'EmailIndex', // Requer um GSI na tabela CANDIFeelings
         KeyConditionExpression: 'email = :email',
-        ExpressionAttributeValues: { ':email': email },
+        ExpressionAttributeValues: { ':email': user.profile_email },
       }),
     );
 
     const items = result.Items || [];
-    // Ordena para mostrar os mais recentes primeiro
     items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     return items;

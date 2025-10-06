@@ -95,7 +95,7 @@ export class AuthService {
       sameSite: isProduction ? 'none' : 'lax',
     });
 
-    return { message: 'Login bem-sucedido!', accessToken };
+    return { message: 'Login bem-sucedido!', accessToken, refreshToken};
   }
 
   // ==================== LOGOUT ====================
@@ -106,36 +106,20 @@ export class AuthService {
   }
 
   // ==================== REFRESH TOKEN ====================
-  async refreshTokens(refreshToken: string, res: any) {
-    try {
-      const payload: any = await this.jwtService.verifyAsync(refreshToken, {
-        secret: process.env.REFRESH_TOKEN_SECRET,
-      });
+async refreshTokens(refreshToken: string, res) {
+  const payload = this.jwtService.verify(refreshToken);
 
-      const result = await this.db.send(
-        new GetCommand({ TableName: this.tableName, Key: { profile_id: payload.id } }),
-      );
+  const newAccessToken = this.jwtService.sign({ sub: payload.sub }, { expiresIn: '30m' });
+  const newRefreshToken = this.jwtService.sign({ sub: payload.sub }, { expiresIn: '7d' });
 
-      const user = result.Item;
-      if (!user) throw new BadRequestException('Usuário não encontrado');
+  res.cookie('ACCESS_TOKEN', newAccessToken, { httpOnly: true });
+  res.cookie('REFRESH_TOKEN', newRefreshToken, { httpOnly: true });
 
-      const newAccessToken = await this.jwtService.signAsync(
-        { id: user.profile_id, email: user.profile_email },
-        { secret: process.env.ACCESS_TOKEN_SECRET, expiresIn: '30m' },
-      );
-
-      res.cookie('ACCESS_TOKEN', newAccessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none',
-        maxAge: 30 * 60 * 1000,
-      });
-
-      return { message: 'Token regenerado!', accessToken: newAccessToken };
-    } catch {
-      throw new UnauthorizedException('Refresh token inválido');
-    }
-  }
+  return {
+    accessToken: newAccessToken,
+    refreshToken: newRefreshToken,
+  };
+}
 
   // ==================== GET USER PROFILE ====================
   async getProfile(userId: string) {
