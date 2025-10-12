@@ -1,4 +1,3 @@
-// main.ts
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import {
@@ -6,7 +5,7 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import fastifyCookie from 'fastify-cookie';
-import multipart from '@fastify/multipart'; // <-- import do multipart
+import multipart from '@fastify/multipart'; 
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -14,11 +13,11 @@ async function bootstrap() {
     new FastifyAdapter(),
   );
 
-  // Registrar multipart para Fastify
   await app.register(multipart);
 
   app.enableCors({
     origin: ['http://localhost:8081', 'http://localhost:19006'],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
 
