@@ -4,9 +4,10 @@ import {
   PutCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { randomUUID } from 'crypto';
 
-// Interface para o objeto de usuário que o AuthGuard anexa
+import { randomUUID } from 'crypto';
+import { AuthService } from '../auth/auth.service'; // Importe o AuthService
+
 interface AuthenticatedUser {
   profile_id: string;
   profile_email: string;
@@ -19,7 +20,15 @@ export class JournalService {
   constructor(
     @Inject('DYNAMO_CLIENT')
     private readonly db: DynamoDBDocumentClient,
+    private readonly authService: AuthService, // Injete o AuthService
+  ) {}
+
+  // O método agora recebe o e-mail no corpo (payload)
+  async addFeeling(payload: { email: string; happiness: number; observation: string }) {
+    // Valida o usuário e obtém o perfil completo a partir do e-mail
+    const profile = await this.authService.findProfileByEmail(payload.email);
   ) {} // O AuthService foi removido, o Guard faz a validação
+
 
   async addFeeling(user: AuthenticatedUser, payload: { happiness: number; observation: string }) {
     if (!payload.observation || payload.observation.trim() === '') {
@@ -45,7 +54,12 @@ export class JournalService {
     return newFeeling;
   }
 
-  async getFeelingsByUser(user: AuthenticatedUser) {
+  // O método agora busca por e-mail
+
+  async getFeelingsByEmail(email: string) {
+    // Valida se o usuário com este e-mail existe
+    await this.authService.findProfileByEmail(email);
+
     const result = await this.db.send(
       new QueryCommand({
         TableName: this.tableName,
