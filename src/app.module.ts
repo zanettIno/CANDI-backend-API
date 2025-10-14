@@ -7,6 +7,8 @@ import { EmergencyContactsModule } from './emergency-contacts/emergency-contacts
 import { JournalModule } from './journal/journal.module';
 import { MedicinesModule } from './schedule/medicines/medicines.module';
 import { CalendarModule } from './schedule/calendar/calendar.module';
+import { ProfileImageModule } from './s3/profile-image.module';
+import { RecuperarModule } from './auth/recovery/recovery.module';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { CalendarModule } from './schedule/calendar/calendar.module';
     JournalModule,
     MedicinesModule,
     CalendarModule,
+    ProfileImageModule,
+    RecuperarModule,
   ],
 })
 export class AppModule {}
