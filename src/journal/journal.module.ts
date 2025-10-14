@@ -2,10 +2,10 @@ import { Module } from '@nestjs/common';
 import { JournalService } from './journal.service';
 import { JournalController } from './journal.controller';
 import { DynamoDBModule } from '../dynamodb/dynamodb.module';
-import { AuthModule } from '../auth/auth.module'; // <-- Adicione esta linha
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [DynamoDBModule, AuthModule], // <-- Adicione AuthModule aqui
+  imports: [DynamoDBModule, AuthModule],
   providers: [JournalService],
   controllers: [JournalController],
 })

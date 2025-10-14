@@ -4,10 +4,14 @@ import {
   PutCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { randomUUID } from 'crypto';
 
+import { randomUUID } from 'crypto';
 import { AuthService } from '../auth/auth.service'; // Importe o AuthService
 
+interface AuthenticatedUser {
+  profile_id: string;
+  profile_email: string;
+}
 
 @Injectable()
 export class JournalService {
@@ -23,11 +27,18 @@ export class JournalService {
   async addFeeling(payload: { email: string; happiness: number; observation: string }) {
     // Valida o usuário e obtém o perfil completo a partir do e-mail
     const profile = await this.authService.findProfileByEmail(payload.email);
+  ) {} // O AuthService foi removido, o Guard faz a validação
 
+
+  async addFeeling(user: AuthenticatedUser, payload: { happiness: number; observation: string }) {
+    if (!payload.observation || payload.observation.trim() === '') {
+      throw new BadRequestException('A observação é obrigatória.');
+    }
+    
     const newFeeling = {
       feeling_id: randomUUID(),
-      profile_id: profile.profile_id, // Guarda o ID do perfil encontrado
-      email: profile.profile_email,   // Guarda o e-mail validado
+      profile_id: user.profile_id,
+      email: user.profile_email,
       happiness: payload.happiness,
       observation: payload.observation,
       created_at: new Date().toISOString(),
@@ -54,12 +65,11 @@ export class JournalService {
         TableName: this.tableName,
         IndexName: 'EmailIndex', // Requer um GSI na tabela CANDIFeelings
         KeyConditionExpression: 'email = :email',
-        ExpressionAttributeValues: { ':email': email },
+        ExpressionAttributeValues: { ':email': user.profile_email },
       }),
     );
 
     const items = result.Items || [];
-    // Ordena para mostrar os mais recentes primeiro
     items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     return items;

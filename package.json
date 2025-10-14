@@ -21,7 +21,9 @@
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.888.0",
+    "@aws-sdk/client-s3": "^3.901.0",
     "@aws-sdk/lib-dynamodb": "^3.888.0",
+    "@fastify/multipart": "^9.2.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
@@ -31,9 +33,14 @@
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
+    "dotenv": "^17.2.3",
     "fastify-cookie": "^5.6.1",
+    "multer": "^2.0.2",
+    "multer-s3": "^3.0.1",
+    "nodemailer": "^7.0.6",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "sharp": "^0.34.4"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -44,7 +51,8 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^22.10.7",
+    "@types/node": "^22.18.10",
+    "@types/nodemailer": "^7.0.2",
     "@types/supertest": "^6.0.2",
     "aws-sdk-client-mock": "^4.1.0",
     "aws-sdk-client-mock-jest": "^4.1.0",

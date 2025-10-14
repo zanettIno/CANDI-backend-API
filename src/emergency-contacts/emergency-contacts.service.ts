@@ -2,20 +2,26 @@ import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { UpdateEmergencyContactsDto } from './dto/update-emergency-contacts.dto';
 
+// Interface para o objeto de usuário que o AuthGuard anexa
+interface AuthenticatedUser {
+  profile_id: string;
+}
+
 @Injectable()
 export class EmergencyContactsService {
-  private readonly tableName = process.env.DYNAMO_USERS_TABLE || 'CANDIProfile'; 
+  private readonly tableName = 'CANDIProfile'; 
 
   constructor(
     @Inject('DYNAMO_CLIENT')
     private readonly db: DynamoDBDocumentClient,
   ) {}
 
-  async update(userId: string, contactDto: UpdateEmergencyContactsDto) {
+  async update(user: AuthenticatedUser, contactDto: UpdateEmergencyContactsDto) {
     const command = new UpdateCommand({
       TableName: this.tableName,
       Key: {
-        profile_id: userId,
+        // Usamos o ID que vem do usuário autenticado pelo token
+        profile_id: user.profile_id,
       },
       UpdateExpression:
         'SET emergency_contact_name = :name, emergency_contact_phone = :phone, emergency_contact_rela = :rela',
@@ -32,7 +38,7 @@ export class EmergencyContactsService {
       const result = await this.db.send(command);
       
       if (!result.Attributes) {
-        throw new NotFoundException(`Usuário com ID "${userId}" não encontrado.`);
+        throw new NotFoundException(`Usuário não encontrado.`);
       }
 
       return {
@@ -42,7 +48,7 @@ export class EmergencyContactsService {
     } catch (error) {
         console.error("Erro ao atualizar no DynamoDB:", error);
         if (error.name === 'ConditionalCheckFailedException') {
-            throw new NotFoundException(`Usuário com ID "${userId}" não encontrado.`);
+            throw new NotFoundException(`Usuário não encontrado.`);
         }
         throw error;
     }
