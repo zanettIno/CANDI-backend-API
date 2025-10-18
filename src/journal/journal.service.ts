@@ -23,13 +23,6 @@ export class JournalService {
     private readonly authService: AuthService, // Injete o AuthService
   ) {}
 
-  // O método agora recebe o e-mail no corpo (payload)
-  async addFeeling(payload: { email: string; happiness: number; observation: string }) {
-    // Valida o usuário e obtém o perfil completo a partir do e-mail
-    const profile = await this.authService.findProfileByEmail(payload.email);
-  ) {} // O AuthService foi removido, o Guard faz a validação
-
-
   async addFeeling(user: AuthenticatedUser, payload: { happiness: number; observation: string }) {
     if (!payload.observation || payload.observation.trim() === '') {
       throw new BadRequestException('A observação é obrigatória.');
@@ -56,7 +49,7 @@ export class JournalService {
 
   // O método agora busca por e-mail
 
-  async getFeelingsByEmail(email: string) {
+  async getFeelingsByEmail(email: string, user: AuthenticatedUser) {
     // Valida se o usuário com este e-mail existe
     await this.authService.findProfileByEmail(email);
 

@@ -19,7 +19,6 @@ async function bootstrap() {
     origin: ['http://localhost:8081', 'http://localhost:19006'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
   });
 
   await app.register(fastifyCookie, {
