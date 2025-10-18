@@ -16,18 +16,21 @@ export class JournalController {
   constructor(private readonly service: JournalService) {}
 
   @Post('feelings')
-  // 3. O body agora não precisa mais do e-mail
   async addFeeling(
     @Req() req: AuthenticatedRequest,
     @Body() body: { happiness: number; observation: string },
   ) {
-    // Passamos o 'user' que o AuthGuard nos deu para o serviço
-    return this.service.addFeeling(req.user, body);
+    await this.service.addFeeling(
+      req.user, 
+      body,     
+    );
+
+    return this.service.getFeelingsByEmail(req.user.profile_email);
   }
 
   @Get('feelings') // 4. A rota GET agora é mais simples
   async getFeelings(@Req() req: AuthenticatedRequest) {
     // Usamos o 'user' do token para buscar os sentimentos
-    return this.service.getFeelingsByUser(req.user);
+    return this.service.getFeelingsByEmail(req.user.profile_email);
   }
 }
