@@ -12,6 +12,12 @@ export class AuthController {
     return this.authService.register(body);
   }
 
+  @Post('google')
+async googleLogin(@Body() body, @Res({ passthrough: true }) res) {
+  return this.authService.googleLogin(body, res);
+}
+
+
   @Post('login')
   async login(@Body() body: AuthDto, @Res({ passthrough: true }) res) {
     return this.authService.login(body, res);
