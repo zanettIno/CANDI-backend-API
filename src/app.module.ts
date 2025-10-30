@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { MongooseModule } from '@nestjs/mongoose'; // ✅ import do mongoose
+
 import { DynamoDBModule } from './dynamodb/dynamodb.module';
 import { AuthModule } from './auth/auth.module';
 import { SymptomsModule } from './schedule/symptoms/symptoms.module';
@@ -10,11 +12,15 @@ import { CalendarModule } from './schedule/calendar/calendar.module';
 import { ProfileImageModule } from './s3/profile-image.module';
 import { RecuperarModule } from './auth/recovery/recovery.module';
 import { DiaryModule } from './diary/diary.module';
+import { CommunityModule } from './community/community.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     DynamoDBModule,
+    MongooseModule.forRoot(process.env.MONGO_URI || '', {
+      dbName: 'candi_communities', // ✅ nome do banco separado
+    }),
     AuthModule,
     SymptomsModule,
     EmergencyContactsModule,
@@ -24,6 +30,7 @@ import { DiaryModule } from './diary/diary.module';
     ProfileImageModule,
     RecuperarModule,
     DiaryModule,
+    CommunityModule,
   ],
 })
 export class AppModule {}
