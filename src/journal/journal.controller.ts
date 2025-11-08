@@ -25,7 +25,7 @@ export class JournalController {
       body,     
     );
 
-    return this.service.getFeelingsByEmail(req.user.profile_email);
+    return this.service.getFeelingsByEmail(req.user.profile_email, req.user);
   }
 
   @Get('feelings') // 4. A rota GET agora é mais simples
