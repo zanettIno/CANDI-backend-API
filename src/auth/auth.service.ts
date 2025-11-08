@@ -147,4 +147,74 @@ async refreshTokens(refreshToken: string, res) {
     if (!user) throw new BadRequestException('Usuário com este e-mail não foi encontrado');
     return user;
   }
+
+  async googleLogin(data: { email: string; name: string; picture?: string }, res: any) {
+  const { email, name, picture } = data;
+
+  // Verifica se usuário já existe
+  const existing = await this.db.send(
+    new ScanCommand({
+      TableName: this.tableName,
+      FilterExpression: 'profile_email = :email',
+      ExpressionAttributeValues: { ':email': email },
+    }),
+  );
+
+  let user = existing.Items?.[0];
+
+  // Se não existir, cria
+  if (!user) {
+    user = {
+      profile_id: randomUUID(),
+      profile_name: name,
+      profile_nickname: name,
+      profile_email: email,
+      profile_picture: picture,
+      profile_password: null, // Google login não usa senha
+    };
+
+    await this.db.send(new PutCommand({
+      TableName: this.tableName,
+      Item: user,
+    }));
+  }
+
+  // Cria tokens igual ao login normal
+  const accessToken = await this.jwtService.signAsync(
+    { id: user.profile_id, email: user.profile_email },
+    { secret: process.env.ACCESS_TOKEN_SECRET, expiresIn: '30m' },
+  );
+
+  const refreshToken = await this.jwtService.signAsync(
+    { id: user.profile_id, email: user.profile_email },
+    { secret: process.env.REFRESH_TOKEN_SECRET, expiresIn: '7d' },
+  );
+
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  res.cookie('ACCESS_TOKEN', accessToken, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: 30 * 60 * 1000,
+  });
+
+  res.cookie('REFRESH_TOKEN', refreshToken, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+  });
+
+  return {
+    message: 'Login Google bem-sucedido!',
+    accessToken,
+    refreshToken,
+    user: {
+      email: user.profile_email,
+      name: user.profile_name,
+      picture: user.profile_picture,
+    },
+  };
+}
+
 }
