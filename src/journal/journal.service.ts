@@ -50,8 +50,9 @@ export class JournalService {
     return newFeeling;
   }
 
-  async getFeelingsByEmail(email: string) {
-    await this.authService.findProfileByEmail(email);
+  async getFeelingsByEmail(email: string, user: AuthenticatedUser) {
+    // Valida se o usuário com este e-mail existe
+    await this.authService.findProfileByEmail(email);
 
     const result = await this.db.send(
       new QueryCommand({

@@ -31,6 +31,6 @@ export class JournalController {
   @Get('feelings') // 4. A rota GET agora é mais simples
   async getFeelings(@Req() req: AuthenticatedRequest) {
     // Usamos o 'user' do token para buscar os sentimentos
-    return this.service.getFeelingsByEmail(req.user.profile_email);
+    return this.service.getFeelingsByEmail(req.user.profile_email, req.user);
   }
 }
