@@ -10,6 +10,7 @@ import { CalendarModule } from './schedule/calendar/calendar.module';
 import { ProfileImageModule } from './s3/profile-image.module';
 import { RecuperarModule } from './auth/recovery/recovery.module';
 import { DiaryModule } from './diary/diary.module';
+import { MilestonesModule } from './treatment/milestones/milestones.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { DiaryModule } from './diary/diary.module';
     ProfileImageModule,
     RecuperarModule,
     DiaryModule,
+    MilestonesModule,
   ],
 })
 export class AppModule {}
