@@ -1,7 +1,6 @@
-import { Controller, Patch, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Req } from '@nestjs/common';
 import { EmergencyContactsService } from './emergency-contacts.service';
-import { UpdateEmergencyContactsDto } from './dto/update-emergency-contacts.dto';
-import { AuthGuard } from '../auth/auth.guard'; // 1. Importe o AuthGuard
+import { AuthGuard } from '../auth/auth.guard';
 
 // Interface para o pedido autenticado
 interface AuthenticatedRequest {
@@ -11,19 +10,31 @@ interface AuthenticatedRequest {
   };
 }
 
-@Controller('emergency-contact') // 2. Rota base simplificada
-@UseGuards(AuthGuard) // 3. Aplique o Guard a todas as rotas
+// Interface para o corpo da requisição
+interface CreateContactBody {
+  emergency_contact_name: string;
+  emergency_contact_phone: string;
+  emergency_contact_relationship: string;
+}
+
+@Controller('emergency-contact')
+@UseGuards(AuthGuard)
 export class EmergencyContactsController {
   constructor(
     private readonly emergencyContactsService: EmergencyContactsService,
   ) {}
 
-  @Patch() // 4. A rota já não precisa de parâmetros
-  update(
-    @Req() req: AuthenticatedRequest, // Obtém o usuário do token
-    @Body() contactDto: UpdateEmergencyContactsDto,
+  @Post() // ALTERADO: De PATCH para POST
+  create(
+    @Req() req: AuthenticatedRequest,
+    @Body() contactDto: CreateContactBody,
   ) {
-    // Passa o objeto 'user' para o serviço
-    return this.emergencyContactsService.update(req.user, contactDto);
+    // Chama o novo método 'createContact'
+    return this.emergencyContactsService.createContact(req.user, contactDto);
+  }
+
+  @Get() // NOVO: Rota para listar os contatos
+  findAll(@Req() req: AuthenticatedRequest) {
+    return this.emergencyContactsService.listContacts(req.user);
   }
 }
