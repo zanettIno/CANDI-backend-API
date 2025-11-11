@@ -6,7 +6,7 @@ import { AuthModule } from '../../auth/auth.module';
 
 @Module({
   imports: [DynamoDBModule, AuthModule],
-  controllers: [MilestonesController],
   providers: [MilestonesService],
+  controllers: [MilestonesController],
 })
 export class MilestonesModule {}
