@@ -16,7 +16,7 @@ async function bootstrap() {
   await app.register(multipart);
 
   app.enableCors({
-    origin: ['http://localhost:8081', 'http://localhost:19006'],
+    origin: ['http://localhost:8081', 'http://localhost:19006','null'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });

@@ -13,6 +13,8 @@ import { ProfileImageModule } from './s3/profile-image.module';
 import { RecuperarModule } from './auth/recovery/recovery.module';
 import { DiaryModule } from './diary/diary.module';
 import { CommunityModule } from './community/community.module';
+// import { FeedModule } from './feed/feed.module.ts'; // 🔹 NOVO
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -29,8 +31,8 @@ import { CommunityModule } from './community/community.module';
     CalendarModule,
     ProfileImageModule,
     RecuperarModule,
-    DiaryModule,
-    CommunityModule,
+    // FeedModule, 
+    ChatModule,
   ],
 })
 export class AppModule {}
