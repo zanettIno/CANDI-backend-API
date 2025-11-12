@@ -4,7 +4,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { ProfileImageService } from './profile-image.service';
 
 interface AuthenticatedRequest extends FastifyRequest {
-  user: { profile_id: string }; // ⚡ precisa bater com o que o guard retorna
+  user: { profile_id: string };
 }
 
 @Controller('profile-image')
@@ -20,7 +20,7 @@ export class ProfileImageController {
     }
 
     const buffer = await data.toBuffer();
-    const profileId = req.user.profile_id; // 🔹 pega do guard
+    const profileId = req.user.profile_id; 
 
     return this.profileImageService.uploadProfileImage(
       profileId,

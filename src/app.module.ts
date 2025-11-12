@@ -1,3 +1,4 @@
+// src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DynamoDBModule } from './dynamodb/dynamodb.module';
@@ -10,6 +11,8 @@ import { CalendarModule } from './schedule/calendar/calendar.module';
 import { ProfileImageModule } from './s3/profile-image.module';
 import { RecuperarModule } from './auth/recovery/recovery.module';
 import { DiaryModule } from './diary/diary.module';
+import { ChatModule } from './chat/chat.module'; // Módulo do Chat
+import { FeedModule } from './feed/feed.module'; // 🔹 NOVO MÓDULO DO FEED
 import { MilestonesModule } from './treatment/milestones/milestones.module';
 
 @Module({
@@ -25,6 +28,8 @@ import { MilestonesModule } from './treatment/milestones/milestones.module';
     ProfileImageModule,
     RecuperarModule,
     DiaryModule,
+    ChatModule,
+    FeedModule, // 🔹 ADICIONADO AQUI
     MilestonesModule,
   ],
 })
