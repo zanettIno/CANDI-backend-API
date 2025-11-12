@@ -9,7 +9,7 @@ interface AuthenticatedRequest {
   user: {
     profile_id: string;
     profile_email: string;
-    profile_name: string;  // Assumindo que o guard anexa o nome/nickname
+    profile_name: string;
     profile_nickname: string;
   };
 }
@@ -21,7 +21,6 @@ export class ChatController {
 
   /**
    * (Tela 2) Rota para buscar a "Caixa de Entrada" do usuário.
-   * Lista todas as conversas ativas.
    */
   @Get('inbox')
   async getInbox(@Req() req: AuthenticatedRequest) {
@@ -29,38 +28,39 @@ export class ChatController {
   }
 
   /**
-   * Rota para iniciar uma conversa com outro usuário.
-   * Retorna o ID da conversa (conversation_id), seja ela nova ou existente.
+   * Rota para iniciar uma conversa com outro usuário (usando EMAIL).
    */
   @Post('start')
   async startConversation(
     @Req() req: AuthenticatedRequest,
-    @Body() body: StartConversationDto,
+    @Body() body: StartConversationDto, // ⬅️ Usa o DTO com otherUserEmail
   ) {
-    if (req.user.profile_id === body.otherProfileId) {
+    if (req.user.profile_email === body.otherUserEmail) {
         throw new BadRequestException('Você não pode iniciar uma conversa consigo mesmo.');
     }
     
-    // Precisamos do nome/nickname do outro usuário, que o serviço vai buscar
-    return this.chatService.findOrCreateConversation(
+    // 🔹 CHAMA A FUNÇÃO PÚBLICA CORRETA
+    return this.chatService.findOrCreateConversationByEmail(
       req.user,
-      body.otherProfileId,
+      body.otherUserEmail,
     );
   }
 
   /**
-   * (Tela 3) Rota para buscar as mensagens de UMA conversa específica.
+   * (Tela 3) Rota para buscar as mensagens.
    */
   @Get('messages/:conversationId')
   async getMessages(
-    @Req() req: AuthenticatedRequest,
+    @Req() req: AuthenticatedRequest, // ⬅️ ERRO CORRIGIDO AQUI
     @Param('conversationId') conversationId: string,
   ) {
-    return this.chatService.getMessages(req.user.profile_id, conversationId);
+    // 🔹 Decodifica o ID da URL (para o caractere '#')
+    const decodedConversationId = decodeURIComponent(conversationId);
+    return this.chatService.getMessages(req.user.profile_id, decodedConversationId);
   }
 
   /**
-   * (Tela 3) Rota para enviar uma mensagem em UMA conversa específica.
+   * (Tela 3) Rota para enviar uma mensagem.
    */
   @Post('messages/:conversationId')
   async sendMessage(
@@ -68,9 +68,11 @@ export class ChatController {
     @Param('conversationId') conversationId: string,
     @Body() body: SendMessageDto,
   ) {
+    // 🔹 Decodifica o ID da URL (para o caractere '#')
+    const decodedConversationId = decodeURIComponent(conversationId);
     return this.chatService.sendMessage(
       req.user,
-      conversationId,
+      decodedConversationId,
       body.messageContent,
     );
   }

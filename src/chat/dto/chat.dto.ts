@@ -1,11 +1,11 @@
 // src/chat/dto/chat.dto.ts
-import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString, IsEmail } from 'class-validator';
 
-// 🔹 DTO para iniciar uma nova conversa
+// 🔹 DTO para iniciar uma nova conversa (usa email)
 export class StartConversationDto {
-  @IsUUID()
+  @IsEmail()
   @IsNotEmpty()
-  otherProfileId: string; // O ID do usuário com quem se quer falar
+  otherUserEmail: string; // O email do usuário com quem se quer falar
 }
 
 // 🔹 DTO para enviar uma mensagem
