@@ -13,6 +13,7 @@ import { RecuperarModule } from './auth/recovery/recovery.module';
 import { DiaryModule } from './diary/diary.module';
 import { ChatModule } from './chat/chat.module'; // Módulo do Chat
 import { FeedModule } from './feed/feed.module'; // 🔹 NOVO MÓDULO DO FEED
+import { MilestonesModule } from './treatment/milestones/milestones.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { FeedModule } from './feed/feed.module'; // 🔹 NOVO MÓDULO DO FEED
     DiaryModule,
     ChatModule,
     FeedModule, // 🔹 ADICIONADO AQUI
+    MilestonesModule,
   ],
 })
 export class AppModule {}

@@ -1,35 +1,44 @@
-import { Controller, Post, Get, Param, Body } from '@nestjs/common';
+import { Controller, Post, Get, Param, Body, UseGuards, Req } from '@nestjs/common';
 import { CalendarService } from './calendar.service';
+import { AuthGuard } from '../../auth/auth.guard'; // 1. Importe o AuthGuard
 
-@Controller('patients/:id/calendar')
+// Interface para o pedido autenticado
+interface AuthenticatedRequest {
+  user: {
+    profile_id: string;
+    profile_email: string;
+  };
+}
+
+// Interface para o corpo do evento
+interface EventBody {
+  appointment_name: string;
+  appointment_date: string;
+  appointment_time: string;
+  local?: string;
+  observation?: string;
+}
+
+@Controller('calendar') // 2. Rota base simplificada
+@UseGuards(AuthGuard) // 3. Aplique o Guard
 export class CalendarController {
   constructor(private readonly service: CalendarService) {}
 
-  // POST /patients/{id}/calendar/events
   @Post('events')
   createEvent(
-    @Param('id') profileId: string,
-    @Body()
-    body: {
-      appointment_name: string;
-      appointment_date: string;
-      appointment_time: string;
-      local?: string;
-      observation?: string;
-    },
+    @Req() req: AuthenticatedRequest, // 4. Obtenha o usuário do token
+    @Body() body: EventBody,
   ) {
-    return this.service.createEvent(profileId, body);
+    return this.service.createEvent(req.user, body);
   }
 
-  // GET /patients/{id}/calendar/events
   @Get('events')
-  listEvents(@Param('id') profileId: string) {
-    return this.service.listEvents(profileId);
+  listEvents(@Req() req: AuthenticatedRequest) { // 5. Obtenha o usuário do token
+    return this.service.listEvents(req.user);
   }
 
-  // GET /patients/{id}/calendar/summary
   @Get('summary')
-  getSummary(@Param('id') profileId: string) {
-    return this.service.getMonthlySummary(profileId);
+  getSummary(@Req() req: AuthenticatedRequest) { // 6. Obtenha o usuário do token
+    return this.service.getMonthlySummary(req.user);
   }
 }
