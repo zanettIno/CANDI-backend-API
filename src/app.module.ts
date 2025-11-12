@@ -1,6 +1,6 @@
+// src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-
 import { DynamoDBModule } from './dynamodb/dynamodb.module';
 import { AuthModule } from './auth/auth.module';
 import { SymptomsModule } from './schedule/symptoms/symptoms.module';
@@ -11,8 +11,8 @@ import { CalendarModule } from './schedule/calendar/calendar.module';
 import { ProfileImageModule } from './s3/profile-image.module';
 import { RecuperarModule } from './auth/recovery/recovery.module';
 import { DiaryModule } from './diary/diary.module';
-// import { FeedModule } from './feed/feed.module.ts'; // 🔹 NOVO
-import { ChatModule } from './chat/chat.module';
+import { ChatModule } from './chat/chat.module'; // Módulo do Chat
+import { FeedModule } from './feed/feed.module'; // 🔹 NOVO MÓDULO DO FEED
 
 @Module({
   imports: [
@@ -26,8 +26,9 @@ import { ChatModule } from './chat/chat.module';
     CalendarModule,
     ProfileImageModule,
     RecuperarModule,
-    // FeedModule, 
+    DiaryModule,
     ChatModule,
+    FeedModule, // 🔹 ADICIONADO AQUI
   ],
 })
 export class AppModule {}

@@ -13,7 +13,9 @@ async function bootstrap() {
     new FastifyAdapter(),
   );
 
-  await app.register(multipart);
+  await app.register(multipart, { // ⬇️ LINHA NOVA ⬇️
+    attachFieldsToBody: true,
+  });
 
   app.enableCors({
     origin: ['http://localhost:8081', 'http://localhost:19006','null'],
