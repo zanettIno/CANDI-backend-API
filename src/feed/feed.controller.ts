@@ -23,49 +23,70 @@ export class FeedController {
   async createPost(
     @Req() req: AuthenticatedRequest,
     @Query('topic') topic?: string,
-    @Query('subgroup') subgroup?: string, // 1. RECEBE O SUBGRUPO AQUI
+    @Query('subgroup') subgroup?: string,
   ) {
     let filePayload: { buffer: Buffer; mimetype: string; originalName: string } | undefined = undefined;
-    
-    // Pega o objeto do campo 'content'
-    const postContentField = (req.body as any)?.content;
-    // Pega o valor (texto) de dentro do objeto
-    const postContentValue = postContentField?.value || '';
+    let postContent = '';
 
-    // Tenta processar um arquivo (se ele veio junto) - FAZER ISSO ANTES DA VALIDAÇÃO
-    let hasFile = false;
     try {
-      const data = await req.file();
-      if (data && data.filename) { // Garante que é um arquivo real
-          const buffer = await data.toBuffer();
-          filePayload = {
-              buffer,
-              mimetype: data.mimetype,
-              originalName: data.filename,
-          };
-          hasFile = true;
+      // Com attachFieldsToBody: true, os campos vêm como objetos no req.body
+      const contentField = (req.body as any)?.content;
+
+      // Extrai o valor do conteúdo (pode estar em .value ou ser string direto)
+      if (contentField) {
+        postContent = typeof contentField === 'string'
+          ? contentField
+          : contentField.value || '';
       }
-    } catch (e) {
-       console.log("Info: Postagem sem arquivo anexado.");
-    }
 
-    // Valida: deve ter TEXTO OU ARQUIVO (não vazio ambos)
-    if (!hasFile && (!postContentValue || (typeof postContentValue === 'string' && postContentValue.trim().length === 0))) {
-      console.error('Falha: postagem sem conteúdo e sem arquivo. Body:', req.body);
-      throw new BadRequestException('A postagem deve conter texto ou uma imagem.');
-    }
+      // Processa arquivo se houver
+      const fileField = (req.body as any)?.file;
+      if (fileField) {
+        if (Buffer.isBuffer(fileField)) {
+          // Se for buffer direto
+          filePayload = {
+            buffer: fileField,
+            mimetype: 'image/jpeg',
+            originalName: 'image.jpg',
+          };
+        } else if (fileField.data && Buffer.isBuffer(fileField.data)) {
+          // Se for objeto com data
+          filePayload = {
+            buffer: fileField.data,
+            mimetype: fileField.mimetype || 'image/jpeg',
+            originalName: fileField.filename || 'image.jpg',
+          };
+        }
+      }
 
-    // Passa o texto limpo para o DTO (pode estar vazio se apenas imagem)
-    const dto: CreatePostDto = { content: postContentValue.trim() };
-  
-    // Manda tudo para o Service
-    return this.feedService.createPost(
-      req.user,
-      dto,
-      topic,
-      filePayload,
-      subgroup, // 2. PASSA O SUBGRUPO PARA O SERVICE
-    );
+      console.log(`[createPost] Content: "${postContent}", Has File: ${!!filePayload}`);
+
+      // Validação: deve ter TEXTO OU ARQUIVO
+      const hasText = postContent.trim().length > 0;
+      const hasFile = !!filePayload;
+
+      if (!hasText && !hasFile) {
+        throw new BadRequestException('A postagem deve conter texto ou uma imagem.');
+      }
+
+      // Cria DTO com conteúdo (pode estar vazio)
+      const dto: CreatePostDto = { content: postContent.trim() };
+
+      // Chama service
+      return this.feedService.createPost(
+        req.user,
+        dto,
+        topic,
+        filePayload,
+        subgroup,
+      );
+    } catch (error) {
+      console.error('[createPost] Error:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Erro ao processar a postagem.');
+    }
   }
 
   @Get('posts')
