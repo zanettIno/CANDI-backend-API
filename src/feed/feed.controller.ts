@@ -205,4 +205,82 @@ export class FeedController {
       user_liked: userLiked,
     };
   }
+
+  /**
+   * Save a post to user's saved posts
+   * POST /feed/posts/:postId/save
+   */
+  @Post('posts/:postId/save')
+  async savePost(
+    @Req() req: AuthenticatedRequest,
+    @Param('postId') postId: string,
+  ) {
+    if (!postId || postId.trim().length === 0) {
+      throw new BadRequestException('ID do post é obrigatório');
+    }
+
+    await this.feedService.savePost(postId, req.user.profile_id);
+
+    return {
+      success: true,
+      message: 'Post salvo com sucesso',
+    };
+  }
+
+  /**
+   * Unsave a post from user's saved posts
+   * DELETE /feed/posts/:postId/save
+   */
+  @Delete('posts/:postId/save')
+  async unsavePost(
+    @Req() req: AuthenticatedRequest,
+    @Param('postId') postId: string,
+  ) {
+    if (!postId || postId.trim().length === 0) {
+      throw new BadRequestException('ID do post é obrigatório');
+    }
+
+    await this.feedService.unsavePost(postId, req.user.profile_id);
+
+    return {
+      success: true,
+      message: 'Post removido dos salvos',
+    };
+  }
+
+  /**
+   * Get all saved posts for user
+   * GET /feed/saved-posts
+   */
+  @Get('saved-posts')
+  async getSavedPosts(@Req() req: AuthenticatedRequest) {
+    const savedPosts = await this.feedService.getSavedPosts(req.user.profile_id);
+
+    return {
+      success: true,
+      posts: savedPosts,
+      count: savedPosts.length,
+    };
+  }
+
+  /**
+   * Check if user saved a post
+   * GET /feed/posts/:postId/save/check
+   */
+  @Get('posts/:postId/save/check')
+  async checkSave(
+    @Req() req: AuthenticatedRequest,
+    @Param('postId') postId: string,
+  ) {
+    if (!postId || postId.trim().length === 0) {
+      throw new BadRequestException('ID do post é obrigatório');
+    }
+
+    const isSaved = await this.feedService.checkUserSave(postId, req.user.profile_id);
+
+    return {
+      success: true,
+      is_saved: isSaved,
+    };
+  }
 }

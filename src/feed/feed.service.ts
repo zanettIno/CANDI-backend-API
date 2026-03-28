@@ -18,6 +18,7 @@ export class FeedService {
   private readonly postsTable = 'CANDIPosts';
   private readonly likesTable = 'CANDIPostLikes';
   private readonly commentsTable = 'CANDIPostComments';
+  private readonly savedPostsTable = 'CANDIUserSavedPosts';
   private readonly allPostsPartition = 'GLOBAL_FEED';
   private readonly bucketName = process.env.AWS_S3_BUCKET_FILE || 'candi-file-uploads';
   private readonly folderName = 'postagens/'; 
@@ -387,6 +388,126 @@ export class FeedService {
       return !!result.Item;
     } catch (error) {
       console.error('Erro ao verificar like:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Save/favorite a post for user
+   */
+  async savePost(postId: string, userId: string): Promise<void> {
+    try {
+      // 1. Check if post exists
+      const postResult = await this.db.send(
+        new GetCommand({
+          TableName: this.postsTable,
+          Key: { post_id: postId },
+        }),
+      );
+
+      if (!postResult.Item) {
+        throw new BadRequestException('Post não encontrado');
+      }
+
+      // 2. Check if already saved
+      const savedResult = await this.db.send(
+        new GetCommand({
+          TableName: this.savedPostsTable,
+          Key: { profile_id: userId, post_id: postId },
+        }),
+      );
+
+      if (savedResult.Item) {
+        throw new BadRequestException('Este post já foi salvo');
+      }
+
+      // 3. Save the post
+      const now = new Date().toISOString();
+      const post = postResult.Item as any;
+
+      await this.db.send(
+        new PutCommand({
+          TableName: this.savedPostsTable,
+          Item: {
+            profile_id: userId,
+            post_id: postId,
+            saved_at: now,
+            // Store minimal post data for quick display
+            post_data: {
+              post_id: post.post_id,
+              profile_id: post.profile_id,
+              profile_name: post.profile_name,
+              content: post.content,
+              file_url: post.file_url,
+              created_at: post.created_at,
+              topic: post.topic,
+            },
+          },
+        }),
+      );
+    } catch (error) {
+      console.error('Erro ao salvar post:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Erro ao salvar post');
+    }
+  }
+
+  /**
+   * Remove saved post
+   */
+  async unsavePost(postId: string, userId: string): Promise<void> {
+    try {
+      await this.db.send(
+        new DeleteCommand({
+          TableName: this.savedPostsTable,
+          Key: { profile_id: userId, post_id: postId },
+        }),
+      );
+    } catch (error) {
+      console.error('Erro ao remover post salvo:', error);
+      throw new InternalServerErrorException('Erro ao remover post salvo');
+    }
+  }
+
+  /**
+   * Get all saved posts for user
+   */
+  async getSavedPosts(userId: string): Promise<any[]> {
+    try {
+      const result = await this.db.send(
+        new QueryCommand({
+          TableName: this.savedPostsTable,
+          KeyConditionExpression: 'profile_id = :userId',
+          ExpressionAttributeValues: { ':userId': userId },
+          ScanIndexForward: false, // Most recent first
+        }),
+      );
+
+      // Return the saved posts with their stored data
+      return (result.Items || []).map((item: any) => item.post_data || item);
+    } catch (error) {
+      console.error('Erro ao buscar posts salvos:', error);
+      throw new InternalServerErrorException('Erro ao buscar posts salvos');
+    }
+  }
+
+  /**
+   * Check if user saved a post
+   */
+  async checkUserSave(postId: string, userId: string): Promise<boolean> {
+    try {
+      const result = await this.db.send(
+        new GetCommand({
+          TableName: this.savedPostsTable,
+          Key: { profile_id: userId, post_id: postId },
+        }),
+      );
+
+      return !!result.Item;
+    } catch (error) {
+      console.error('Erro ao verificar post salvo:', error);
       return false;
     }
   }
