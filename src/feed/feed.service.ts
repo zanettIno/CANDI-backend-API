@@ -69,14 +69,14 @@ export class FeedService {
       post_id: postId,
       profile_id: user.profile_id,
       profile_name: user.profile_name || user.profile_email,
-      content: dto.content,
+      content: dto.content || '', // Garante string vazia se undefined/null
       created_at: now,
       topic: normalizedTopic,
       ...(normalizedSubgroup && { subgroup: normalizedSubgroup }),
       feed_partition: this.allPostsPartition,
       // Novo schema conforme solicitado
       is_image: isImage,
-      ...(fileName && { file_name: fileName }),
+      ...(isImage && fileName && { file_name: fileName }), // Só salva file_name se é imagem
       likes: [], // Array vazio inicialmente
       likes_count: 0,
       comments_count: 0,

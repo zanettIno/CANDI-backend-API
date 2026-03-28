@@ -30,17 +30,12 @@ export class FeedController {
     // Pega o objeto do campo 'content'
     const postContentField = (req.body as any)?.content;
     // Pega o valor (texto) de dentro do objeto
-    const postContentValue = postContentField?.value; 
+    const postContentValue = postContentField?.value || '';
 
-    // Valida o texto
-    if (!postContentValue || (typeof postContentValue === 'string' && postContentValue.trim().length === 0)) {
-      console.error('Falha ao ler o campo "content.value". Body:', req.body);
-      throw new BadRequestException('O campo "content" da postagem é obrigatório.');
-    }
-
-    // Tenta processar um arquivo (se ele veio junto)
+    // Tenta processar um arquivo (se ele veio junto) - FAZER ISSO ANTES DA VALIDAÇÃO
+    let hasFile = false;
     try {
-      const data = await req.file(); 
+      const data = await req.file();
       if (data && data.filename) { // Garante que é um arquivo real
           const buffer = await data.toBuffer();
           filePayload = {
@@ -48,13 +43,20 @@ export class FeedController {
               mimetype: data.mimetype,
               originalName: data.filename,
           };
+          hasFile = true;
       }
     } catch (e) {
        console.log("Info: Postagem sem arquivo anexado.");
     }
-    
-    // Passa o texto limpo para o DTO
-    const dto: CreatePostDto = { content: postContentValue };
+
+    // Valida: deve ter TEXTO OU ARQUIVO (não vazio ambos)
+    if (!hasFile && (!postContentValue || (typeof postContentValue === 'string' && postContentValue.trim().length === 0))) {
+      console.error('Falha: postagem sem conteúdo e sem arquivo. Body:', req.body);
+      throw new BadRequestException('A postagem deve conter texto ou uma imagem.');
+    }
+
+    // Passa o texto limpo para o DTO (pode estar vazio se apenas imagem)
+    const dto: CreatePostDto = { content: postContentValue.trim() };
   
     // Manda tudo para o Service
     return this.feedService.createPost(
