@@ -1,8 +1,8 @@
 // src/feed/feed.controller.ts
-import { Controller, Get, Post, Body, UseGuards, Req, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req, Query, BadRequestException, Delete, Param } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { FeedService } from './feed.service';
-import { CreatePostDto } from './dto/feed.dto';
+import { CreatePostDto, AddCommentDto } from './dto/feed.dto';
 import type { FastifyRequest } from 'fastify'; 
 
 interface AuthenticatedRequest extends FastifyRequest {
@@ -87,5 +87,122 @@ export class FeedController {
     // Senão, é o feed global
     console.log('Buscando Feed Global...');
     return this.feedService.getGlobalFeed();
+  }
+
+  /**
+   * Toggle like on a post (add or remove)
+   * POST /feed/posts/:postId/likes
+   */
+  @Post('posts/:postId/likes')
+  async toggleLike(
+    @Req() req: AuthenticatedRequest,
+    @Param('postId') postId: string,
+  ) {
+    if (!postId || postId.trim().length === 0) {
+      throw new BadRequestException('ID do post é obrigatório');
+    }
+
+    const result = await this.feedService.toggleLike(postId, req.user.profile_id);
+    return {
+      success: true,
+      liked: result.liked,
+      likes_count: result.count,
+    };
+  }
+
+  /**
+   * Add comment to a post
+   * POST /feed/posts/:postId/comments
+   */
+  @Post('posts/:postId/comments')
+  async addComment(
+    @Req() req: AuthenticatedRequest,
+    @Param('postId') postId: string,
+    @Body() dto: AddCommentDto,
+  ) {
+    if (!postId || postId.trim().length === 0) {
+      throw new BadRequestException('ID do post é obrigatório');
+    }
+
+    if (!dto.content || dto.content.trim().length === 0) {
+      throw new BadRequestException('Conteúdo do comentário é obrigatório');
+    }
+
+    const comment = await this.feedService.addComment(
+      postId,
+      req.user.profile_id,
+      req.user.profile_name || req.user.profile_email,
+      dto.content,
+    );
+
+    return {
+      success: true,
+      comment,
+    };
+  }
+
+  /**
+   * Get all comments for a post
+   * GET /feed/posts/:postId/comments
+   */
+  @Get('posts/:postId/comments')
+  async getComments(
+    @Param('postId') postId: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!postId || postId.trim().length === 0) {
+      throw new BadRequestException('ID do post é obrigatório');
+    }
+
+    const limitNum = limit ? Math.min(parseInt(limit, 10), 100) : 20;
+    const comments = await this.feedService.getComments(postId, limitNum);
+
+    return {
+      success: true,
+      comments,
+      count: comments.length,
+    };
+  }
+
+  /**
+   * Delete a comment (only by author)
+   * DELETE /feed/comments/:commentId
+   */
+  @Delete('comments/:commentId')
+  async deleteComment(
+    @Req() req: AuthenticatedRequest,
+    @Param('commentId') commentId: string,
+  ) {
+    if (!commentId || commentId.trim().length === 0) {
+      throw new BadRequestException('ID do comentário é obrigatório');
+    }
+
+    await this.feedService.deleteComment(commentId, req.user.profile_id);
+
+    return {
+      success: true,
+      message: 'Comentário deletado com sucesso',
+    };
+  }
+
+  /**
+   * Check if user liked a post
+   * GET /feed/posts/:postId/likes/check
+   */
+  @Get('posts/:postId/likes/check')
+  async checkLike(
+    @Req() req: AuthenticatedRequest,
+    @Param('postId') postId: string,
+  ) {
+    if (!postId || postId.trim().length === 0) {
+      throw new BadRequestException('ID do post é obrigatório');
+    }
+
+    const userLiked = await this.feedService.checkUserLike(postId, req.user.profile_id);
+
+    return {
+      success: true,
+      user_liked: userLiked,
+    };
   }
 }
