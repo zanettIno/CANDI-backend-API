@@ -21,7 +21,7 @@ export class FeedService {
   private readonly savedPostsTable = 'CANDIUserSavedPosts';
   private readonly allPostsPartition = 'GLOBAL_FEED';
   private readonly bucketName = process.env.AWS_S3_BUCKET_FILE || 'candi-file-uploads';
-  private readonly folderName = 'postagens/'; 
+  private readonly imageFolder = 'posts-image/'; // Pasta específica para imagens de posts 
 
   constructor(
     @Inject('DYNAMO_CLIENT')
@@ -34,16 +34,18 @@ export class FeedService {
     dto: CreatePostDto,
     topic: string = 'GERAL',
     file?: { buffer: Buffer; mimetype: string; originalName: string },
-    subgroup?: string, // 1. RECEBE O NOVO PARÂMETRO AQUI
+    subgroup?: string,
   ) {
     const postId = randomUUID();
     const normalizedTopic = topic.toUpperCase().trim() || 'GERAL';
-    const normalizedSubgroup = subgroup?.toUpperCase().trim(); // 2. NORMALIZA O SUBGRUPO
-    let fileUrl: string | null = null; // Inicia como null (seguro para DynamoDB)
+    const normalizedSubgroup = subgroup?.toUpperCase().trim();
+    let fileName: string | null = null;
+    let isImage = false;
 
     // 1. Upload do Arquivo (se existir)
     if (file) {
-      const fileKey = `${this.folderName}${postId}-${file.originalName}`;
+      isImage = true;
+      const fileKey = `${this.imageFolder}${postId}-${file.originalName}`;
       try {
         await this.s3Provider.client.send(
           new PutObjectCommand({
@@ -53,25 +55,31 @@ export class FeedService {
             ContentType: file.mimetype,
           }),
         );
-        fileUrl = `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+        // Salva apenas o nome do arquivo, não a URL inteira
+        fileName = `${postId}-${file.originalName}`;
       } catch (error) {
         console.error('Erro ao fazer upload para S3:', error);
         throw new InternalServerErrorException('Não foi possível salvar o arquivo da postagem.');
       }
     }
 
-    // 2. Salva o Post no DynamoDB
+    // 2. Salva o Post no DynamoDB com novo schema
+    const now = new Date().toISOString();
     const newPost = {
       post_id: postId,
       profile_id: user.profile_id,
       profile_name: user.profile_name || user.profile_email,
       content: dto.content,
-      ...(fileUrl && { file_url: fileUrl }), 
-      created_at: new Date().toISOString(),
+      created_at: now,
       topic: normalizedTopic,
-      // 3. SALVA O SUBGRUPO (SE ELE EXISTIR)
       ...(normalizedSubgroup && { subgroup: normalizedSubgroup }),
-      feed_partition: this.allPostsPartition, 
+      feed_partition: this.allPostsPartition,
+      // Novo schema conforme solicitado
+      is_image: isImage,
+      ...(fileName && { file_name: fileName }),
+      likes: [], // Array vazio inicialmente
+      likes_count: 0,
+      comments_count: 0,
     };
 
     try {
@@ -177,16 +185,23 @@ export class FeedService {
       const userAlreadyLiked = !!likeResult.Item;
 
       // 3. Toggle like
+      const post = postResult.Item as any;
+      const currentLikes = post.likes || [];
+      const userIndex = currentLikes.indexOf(userId);
+      const userAlreadyLikedInArray = userIndex >= 0;
+
       if (userAlreadyLiked) {
-        // Remove like
+        // Remove like from both tables
         await this.db.send(
           new DeleteCommand({
             TableName: this.likesTable,
             Key: { post_id: postId, profile_id: userId },
           }),
         );
+        // Remove from likes array
+        currentLikes.splice(userIndex, 1);
       } else {
-        // Add like
+        // Add like to both tables
         await this.db.send(
           new PutCommand({
             TableName: this.likesTable,
@@ -197,19 +212,23 @@ export class FeedService {
             },
           }),
         );
+        // Add to likes array
+        currentLikes.push(userId);
       }
 
-      // 4. Update like count on post
+      // 4. Update like count and array on post
       const newLiked = !userAlreadyLiked;
-      const currentCount = (postResult.Item as any).likes_count || 0;
-      const newCount = newLiked ? currentCount + 1 : Math.max(currentCount - 1, 0);
+      const newCount = currentLikes.length;
 
       await this.db.send(
         new UpdateCommand({
           TableName: this.postsTable,
           Key: { post_id: postId },
-          UpdateExpression: 'SET likes_count = :count',
-          ExpressionAttributeValues: { ':count': newCount },
+          UpdateExpression: 'SET likes_count = :count, likes = :likes',
+          ExpressionAttributeValues: {
+            ':count': newCount,
+            ':likes': currentLikes.length > 0 ? new Set(currentLikes) : new Set(),
+          },
         }),
       );
 
