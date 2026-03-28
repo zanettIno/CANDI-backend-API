@@ -511,4 +511,28 @@ export class FeedService {
       return false;
     }
   }
+
+  /**
+   * Get posts for a specific group (using subgroup field as group_id)
+   */
+  async getGroupPosts(groupId: string): Promise<any[]> {
+    try {
+      const normalizedGroupId = groupId.toUpperCase().trim();
+
+      const result = await this.db.send(
+        new QueryCommand({
+          TableName: this.postsTable,
+          IndexName: 'BySubgroupGSI',
+          KeyConditionExpression: 'subgroup = :groupId',
+          ExpressionAttributeValues: { ':groupId': normalizedGroupId },
+          ScanIndexForward: false, // Most recent first
+        }),
+      );
+
+      return result.Items || [];
+    } catch (error) {
+      console.error('Erro ao buscar posts do grupo:', error);
+      throw new InternalServerErrorException('Erro ao buscar posts do grupo');
+    }
+  }
 }
