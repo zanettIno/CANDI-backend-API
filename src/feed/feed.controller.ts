@@ -283,4 +283,23 @@ export class FeedController {
       is_saved: isSaved,
     };
   }
+
+  /**
+   * Get posts for a specific group
+   * GET /feed/groups/:groupId/posts
+   */
+  @Get('groups/:groupId/posts')
+  async getGroupPosts(@Param('groupId') groupId: string) {
+    if (!groupId || groupId.trim().length === 0) {
+      throw new BadRequestException('ID do grupo é obrigatório');
+    }
+
+    const posts = await this.feedService.getGroupPosts(groupId);
+
+    return {
+      success: true,
+      posts,
+      count: posts.length,
+    };
+  }
 }
