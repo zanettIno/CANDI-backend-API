@@ -18,6 +18,8 @@ import {
 import { randomUUID } from 'crypto';
 import { CreateGroupDto } from './dto/community.dto';
 
+type MemberRole = 'admin' | 'co-leader' | 'member' | 'pending';
+
 interface AuthUser {
   profile_id: string;
   profile_name: string;
@@ -41,6 +43,18 @@ export class CommunityService {
     @Inject('DYNAMO_CLIENT')
     private readonly db: DynamoDBDocumentClient,
   ) {}
+
+  // ─── HELPERS ───────────────────────────────────────────────────────────────
+
+  private async requireModRole(groupId: string, profileId: string): Promise<void> {
+    const member = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: profileId },
+    }));
+    if (!member.Item || !['admin', 'co-leader'].includes(member.Item.role)) {
+      throw new ForbiddenException('Apenas admin ou co-líder podem realizar esta ação');
+    }
+  }
 
   // ─── GRUPOS ────────────────────────────────────────────────────────────────
 
@@ -109,41 +123,44 @@ export class CommunityService {
   async joinGroup(user: AuthUser, groupId: string) {
     const group = await this.getGroup(groupId);
 
-    // Verifica se já é membro
-    const existing = await this.db.send(
-      new GetCommand({
-        TableName: this.groupMembersTable,
-        Key: { group_id: groupId, profile_id: user.profile_id },
-      }),
-    );
-    if (existing.Item) throw new ConflictException('Você já faz parte deste grupo');
+    const existing = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: user.profile_id },
+    }));
+    if (existing.Item) {
+      if (existing.Item.role === 'pending') throw new ConflictException('Sua solicitação já está pendente');
+      throw new ConflictException('Você já faz parte deste grupo');
+    }
 
     const now = new Date().toISOString();
+    const requiresApproval = group.requires_approval === true;
+    const role: MemberRole = requiresApproval ? 'pending' : 'member';
 
-    await this.db.send(
-      new PutCommand({
-        TableName: this.groupMembersTable,
-        Item: {
-          group_id: groupId,
-          profile_id: user.profile_id,
-          member_name: user.profile_nickname || user.profile_name,
-          role: 'member',
-          joined_at: now,
-        },
-      }),
-    );
+    await this.db.send(new PutCommand({
+      TableName: this.groupMembersTable,
+      Item: {
+        group_id: groupId,
+        profile_id: user.profile_id,
+        member_name: user.profile_nickname || user.profile_name,
+        role,
+        joined_at: now,
+      },
+    }));
 
-    // Incrementa o contador de membros
-    await this.db.send(
-      new UpdateCommand({
+    if (!requiresApproval) {
+      await this.db.send(new UpdateCommand({
         TableName: this.groupsTable,
         Key: { group_id: groupId },
         UpdateExpression: 'SET member_count = if_not_exists(member_count, :init) + :inc',
         ExpressionAttributeValues: { ':inc': 1, ':init': 0 },
-      }),
-    );
+      }));
+    }
 
-    return { message: 'Você entrou no grupo com sucesso', group_id: groupId };
+    return {
+      message: requiresApproval ? 'Solicitação enviada, aguarde aprovação' : 'Você entrou no grupo com sucesso',
+      status: role,
+      group_id: groupId,
+    };
   }
 
   async leaveGroup(user: AuthUser, groupId: string) {
@@ -198,6 +215,145 @@ export class CommunityService {
       }),
     );
     return result.Items || [];
+  }
+
+  async getPendingRequests(user: AuthUser, groupId: string) {
+    await this.requireModRole(groupId, user.profile_id);
+    const result = await this.db.send(new QueryCommand({
+      TableName: this.groupMembersTable,
+      KeyConditionExpression: 'group_id = :gid',
+      FilterExpression: '#r = :pending',
+      ExpressionAttributeNames: { '#r': 'role' },
+      ExpressionAttributeValues: { ':gid': groupId, ':pending': 'pending' },
+    }));
+    return result.Items || [];
+  }
+
+  async handleJoinRequest(user: AuthUser, groupId: string, targetProfileId: string, action: 'approve' | 'reject') {
+    await this.requireModRole(groupId, user.profile_id);
+
+    const member = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: targetProfileId },
+    }));
+    if (!member.Item || member.Item.role !== 'pending') {
+      throw new NotFoundException('Solicitação não encontrada');
+    }
+
+    if (action === 'reject') {
+      await this.db.send(new DeleteCommand({
+        TableName: this.groupMembersTable,
+        Key: { group_id: groupId, profile_id: targetProfileId },
+      }));
+      return { message: 'Solicitação recusada' };
+    }
+
+    await this.db.send(new UpdateCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: targetProfileId },
+      UpdateExpression: 'SET #r = :member',
+      ExpressionAttributeNames: { '#r': 'role' },
+      ExpressionAttributeValues: { ':member': 'member' },
+    }));
+    await this.db.send(new UpdateCommand({
+      TableName: this.groupsTable,
+      Key: { group_id: groupId },
+      UpdateExpression: 'SET member_count = if_not_exists(member_count, :init) + :inc',
+      ExpressionAttributeValues: { ':inc': 1, ':init': 0 },
+    }));
+    return { message: 'Membro aprovado' };
+  }
+
+  async removeMember(user: AuthUser, groupId: string, targetProfileId: string) {
+    await this.requireModRole(groupId, user.profile_id);
+
+    const target = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: targetProfileId },
+    }));
+    if (!target.Item) throw new NotFoundException('Membro não encontrado');
+    if (target.Item.role === 'admin') throw new ForbiddenException('Não é possível remover o administrador');
+
+    // co-leader cannot remove another co-leader
+    const caller = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: user.profile_id },
+    }));
+    if (caller.Item?.role === 'co-leader' && target.Item.role === 'co-leader') {
+      throw new ForbiddenException('Co-líderes não podem remover outros co-líderes');
+    }
+
+    await this.db.send(new DeleteCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: targetProfileId },
+    }));
+    await this.db.send(new UpdateCommand({
+      TableName: this.groupsTable,
+      Key: { group_id: groupId },
+      UpdateExpression: 'SET member_count = member_count - :dec',
+      ExpressionAttributeValues: { ':dec': 1 },
+    }));
+    return { message: 'Membro removido' };
+  }
+
+  async updateMemberRole(user: AuthUser, groupId: string, targetProfileId: string, newRole: 'co-leader' | 'member') {
+    // Only admin can promote
+    const caller = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: user.profile_id },
+    }));
+    if (caller.Item?.role !== 'admin') throw new ForbiddenException('Apenas o administrador pode nomear co-líderes');
+
+    const target = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: targetProfileId },
+    }));
+    if (!target.Item) throw new NotFoundException('Membro não encontrado');
+    if (target.Item.role === 'admin') throw new ForbiddenException('Não é possível alterar o papel do administrador');
+
+    await this.db.send(new UpdateCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: targetProfileId },
+      UpdateExpression: 'SET #r = :role',
+      ExpressionAttributeNames: { '#r': 'role' },
+      ExpressionAttributeValues: { ':role': newRole },
+    }));
+    return { message: newRole === 'co-leader' ? 'Co-líder nomeado' : 'Papel atualizado para membro' };
+  }
+
+  async deleteGroupPost(user: AuthUser, groupId: string, postId: string) {
+    await this.requireModRole(groupId, user.profile_id);
+
+    // Find the post to get its profile_id (needed for delete key)
+    const postResult = await this.db.send(new QueryCommand({
+      TableName: this.postsTable,
+      IndexName: 'AllPostsGSI',
+      KeyConditionExpression: 'feed_partition = :pk',
+      FilterExpression: 'post_id = :pid AND subgroup = :sg',
+      ExpressionAttributeValues: {
+        ':pk': 'GLOBAL_FEED',
+        ':pid': postId,
+        ':sg': groupId.toUpperCase(),
+      },
+    }));
+
+    const post = postResult.Items?.[0];
+    if (!post) throw new NotFoundException('Publicação não encontrada neste grupo');
+
+    await this.db.send(new DeleteCommand({
+      TableName: this.postsTable,
+      Key: { profile_id: post.profile_id, post_id: post.post_id },
+    }));
+    return { message: 'Publicação removida' };
+  }
+
+  async getMyMemberStatus(profileId: string, groupId: string) {
+    const result = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: profileId },
+    }));
+    if (!result.Item) return { status: 'none' };
+    return { status: result.Item.role, member: result.Item };
   }
 
   // ─── LIKES ──────────────────────────────────────────────────────────────────

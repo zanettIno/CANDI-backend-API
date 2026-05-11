@@ -72,7 +72,9 @@ export class ChatService {
 
 
   async getMessages(profileId: string, conversationId: string) {
-    await this.checkUserInConversation(profileId, conversationId);
+    if (!conversationId.startsWith('GROUP#')) {
+      await this.checkUserInConversation(profileId, conversationId);
+    }
 
     const result = await this.db.send(
       new QueryCommand({
@@ -83,18 +85,20 @@ export class ChatService {
       }),
     );
     
-    // Zera o contador de não lidas para o usuário logado
-    await this.db.send(new UpdateCommand({
-        TableName: this.conversationsTable,
-        Key: { profile_id: profileId, conversation_id: conversationId },
-        UpdateExpression: 'SET unread_count = :zero',
-        ExpressionAttributeValues: { ':zero': 0 },
-        ConditionExpression: 'attribute_exists(profile_id)'
-    })).catch(err => {
-      if (err.name !== 'ConditionalCheckFailedException') {
-        console.error("Erro ao zerar contador:", err);
-      }
-    });
+    // Zera contador de não lidas (não se aplica a chat de grupo)
+    if (!conversationId.startsWith('GROUP#')) {
+      await this.db.send(new UpdateCommand({
+          TableName: this.conversationsTable,
+          Key: { profile_id: profileId, conversation_id: conversationId },
+          UpdateExpression: 'SET unread_count = :zero',
+          ExpressionAttributeValues: { ':zero': 0 },
+          ConditionExpression: 'attribute_exists(profile_id)'
+      })).catch(err => {
+        if (err.name !== 'ConditionalCheckFailedException') {
+          console.error("Erro ao zerar contador:", err);
+        }
+      });
+    }
 
     return result.Items || [];
   }
@@ -161,7 +165,20 @@ export class ChatService {
   async sendMessage(user: AuthenticatedUser, conversationId: string, messageContent: string) {
     const { profile_id, profile_name, profile_nickname } = user;
     const now = new Date().toISOString();
-    
+
+    // Chat de grupo: não tem entrada em CANDIUserConversations, só persiste a mensagem
+    if (conversationId.startsWith('GROUP#')) {
+      const newMessage = {
+        conversation_id: conversationId,
+        timestamp: `${now}#${randomUUID()}`,
+        sender_id: profile_id,
+        sender_name: profile_nickname || profile_name,
+        message_content: messageContent,
+      };
+      await this.db.send(new PutCommand({ TableName: this.messagesTable, Item: newMessage }));
+      return newMessage;
+    }
+
     const conversationEntry = await this.checkUserInConversation(profile_id, conversationId);
     const otherProfileId = conversationEntry.other_user_id;
 

@@ -65,6 +65,54 @@ export class CommunityController {
     return this.communityService.getGroupMembers(groupId);
   }
 
+  @Get('groups/:groupId/my-status')
+  getMyStatus(@Req() req: AuthReq, @Param('groupId') groupId: string) {
+    return this.communityService.getMyMemberStatus(req.user.profile_id, groupId);
+  }
+
+  @Get('groups/:groupId/requests')
+  getPendingRequests(@Req() req: AuthReq, @Param('groupId') groupId: string) {
+    return this.communityService.getPendingRequests(req.user, groupId);
+  }
+
+  @Post('groups/:groupId/requests/:profileId')
+  handleRequest(
+    @Req() req: AuthReq,
+    @Param('groupId') groupId: string,
+    @Param('profileId') profileId: string,
+    @Body() body: { action: 'approve' | 'reject' },
+  ) {
+    return this.communityService.handleJoinRequest(req.user, groupId, profileId, body.action);
+  }
+
+  @Delete('groups/:groupId/members/:profileId')
+  removeMember(
+    @Req() req: AuthReq,
+    @Param('groupId') groupId: string,
+    @Param('profileId') profileId: string,
+  ) {
+    return this.communityService.removeMember(req.user, groupId, profileId);
+  }
+
+  @Post('groups/:groupId/members/:profileId/role')
+  updateMemberRole(
+    @Req() req: AuthReq,
+    @Param('groupId') groupId: string,
+    @Param('profileId') profileId: string,
+    @Body() body: { role: 'co-leader' | 'member' },
+  ) {
+    return this.communityService.updateMemberRole(req.user, groupId, profileId, body.role);
+  }
+
+  @Delete('groups/:groupId/posts/:postId')
+  deleteGroupPost(
+    @Req() req: AuthReq,
+    @Param('groupId') groupId: string,
+    @Param('postId') postId: string,
+  ) {
+    return this.communityService.deleteGroupPost(req.user, groupId, postId);
+  }
+
   // ─── LIKES ──────────────────────────────────────────────────────────────────
 
   @Post('posts/:postId/like')
