@@ -11,8 +11,9 @@ import { CalendarModule } from './schedule/calendar/calendar.module';
 import { ProfileImageModule } from './s3/profile-image.module';
 import { RecuperarModule } from './auth/recovery/recovery.module';
 import { DiaryModule } from './diary/diary.module';
-import { ChatModule } from './chat/chat.module'; // Módulo do Chat
-import { FeedModule } from './feed/feed.module'; // 🔹 NOVO MÓDULO DO FEED
+import { ChatModule } from './chat/chat.module';
+import { FeedModule } from './feed/feed.module';
+import { CommunityModule } from './community/community.module';
 import { MilestonesModule } from './treatment/milestones/milestones.module';
 
 @Module({
@@ -29,7 +30,8 @@ import { MilestonesModule } from './treatment/milestones/milestones.module';
     RecuperarModule,
     DiaryModule,
     ChatModule,
-    FeedModule, // 🔹 ADICIONADO AQUI
+    FeedModule,
+    CommunityModule,
     MilestonesModule,
   ],
 })

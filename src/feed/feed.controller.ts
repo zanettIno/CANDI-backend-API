@@ -1,9 +1,8 @@
-// src/feed/feed.controller.ts
-import { Controller, Get, Post, Body, UseGuards, Req, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, UseGuards, Req, Query, BadRequestException } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { FeedService } from './feed.service';
 import { CreatePostDto } from './dto/feed.dto';
-import type { FastifyRequest } from 'fastify'; 
+import type { FastifyRequest } from 'fastify';
 
 interface AuthenticatedRequest extends FastifyRequest {
   user: {
@@ -23,69 +22,46 @@ export class FeedController {
   async createPost(
     @Req() req: AuthenticatedRequest,
     @Query('topic') topic?: string,
-    @Query('subgroup') subgroup?: string, // 1. RECEBE O SUBGRUPO AQUI
+    @Query('subgroup') subgroup?: string,
   ) {
-    let filePayload: { buffer: Buffer; mimetype: string; originalName: string } | undefined = undefined;
-    
-    // Pega o objeto do campo 'content'
-    const postContentField = (req.body as any)?.content;
-    // Pega o valor (texto) de dentro do objeto
-    const postContentValue = postContentField?.value; 
+    const body = req.body as any;
 
-    // Valida o texto
-    if (!postContentValue || (typeof postContentValue === 'string' && postContentValue.trim().length === 0)) {
-      console.error('Falha ao ler o campo "content.value". Body:', req.body);
-      throw new BadRequestException('O campo "content" da postagem é obrigatório.');
+    // Com attachFieldsToBody: true, campos de texto ficam em body.field.value
+    const contentField = body?.content;
+    const contentValue: string =
+      typeof contentField === 'string'
+        ? contentField
+        : contentField?.value ?? '';
+
+    if (!contentValue.trim()) {
+      throw new BadRequestException('O campo "content" é obrigatório.');
     }
 
-    // Tenta processar um arquivo (se ele veio junto)
-    try {
-      const data = await req.file(); 
-      if (data && data.filename) { // Garante que é um arquivo real
-          const buffer = await data.toBuffer();
-          filePayload = {
-              buffer,
-              mimetype: data.mimetype,
-              originalName: data.filename,
-          };
-      }
-    } catch (e) {
-       console.log("Info: Postagem sem arquivo anexado.");
+    // Arquivo fica em body.file com ._buf (Buffer) e .mimetype e .filename
+    let filePayload: { buffer: Buffer; mimetype: string; originalName: string } | undefined;
+    const fileField = body?.file;
+    if (fileField && fileField._buf) {
+      filePayload = {
+        buffer: Buffer.from(fileField._buf),
+        mimetype: fileField.mimetype || 'image/jpeg',
+        originalName: fileField.filename || `upload_${Date.now()}`,
+      };
     }
-    
-    // Passa o texto limpo para o DTO
-    const dto: CreatePostDto = { content: postContentValue };
-  
-    // Manda tudo para o Service
-    return this.feedService.createPost(
-      req.user,
-      dto,
-      topic,
-      filePayload,
-      subgroup, // 2. PASSA O SUBGRUPO PARA O SERVICE
-    );
+
+    const dto: CreatePostDto = { content: contentValue };
+
+    return this.feedService.createPost(req.user, dto, topic, filePayload, subgroup);
   }
 
   @Get('posts')
   async getPosts(
     @Query('topic') topic?: string,
-    @Query('subgroup') subgroup?: string, // 1. RECEBE O SUBGRUPO AQUI
+    @Query('subgroup') subgroup?: string,
+    @Query('hashtag') hashtag?: string,
   ) {
-    // 2. A LÓGICA DE DECISÃO
-    // Se o usuário pediu um subgrupo, ele tem prioridade máxima.
-    if (subgroup) {
-      console.log(`Buscando Subgrupo: ${subgroup}`);
-      return this.feedService.getPostsBySubgroup(subgroup);
-    }
-
-    // Se pediu um tópico (e não é o feed global)
-    if (topic && topic.toUpperCase() !== 'FEED') {
-      console.log(`Buscando Tópico: ${topic}`);
-      return this.feedService.getPostsByTopic(topic);
-    }
-
-    // Senão, é o feed global
-    console.log('Buscando Feed Global...');
+    if (hashtag) return this.feedService.searchByHashtag(hashtag);
+    if (subgroup) return this.feedService.getPostsBySubgroup(subgroup);
+    if (topic && topic.toUpperCase() !== 'FEED') return this.feedService.getPostsByTopic(topic);
     return this.feedService.getGlobalFeed();
   }
 }

@@ -72,7 +72,7 @@ export class AuthService {
 
     const accessToken = await this.jwtService.signAsync(
       { id: user.profile_id, email: user.profile_email },
-      { secret: process.env.ACCESS_TOKEN_SECRET, expiresIn: '30m' },
+      { secret: process.env.ACCESS_TOKEN_SECRET, expiresIn: '12h' },
     );
 
     const refreshToken = await this.jwtService.signAsync(
@@ -86,7 +86,7 @@ export class AuthService {
       httpOnly: true,
       secure: isProduction,
       sameSite: isProduction ? 'none' : 'lax',
-      maxAge: 30 * 60 * 1000,
+      maxAge: 12 * 60 * 60 * 1000,
     });
 
     res.cookie('REFRESH_TOKEN', refreshToken, {
@@ -109,7 +109,7 @@ export class AuthService {
 async refreshTokens(refreshToken: string, res) {
   const payload = this.jwtService.verify(refreshToken);
 
-  const newAccessToken = this.jwtService.sign({ sub: payload.sub }, { expiresIn: '30m' });
+  const newAccessToken = this.jwtService.sign({ sub: payload.sub }, { expiresIn: '12h' });
   const newRefreshToken = this.jwtService.sign({ sub: payload.sub }, { expiresIn: '7d' });
 
   res.cookie('ACCESS_TOKEN', newAccessToken, { httpOnly: true });
@@ -182,7 +182,7 @@ async refreshTokens(refreshToken: string, res) {
   // Cria tokens igual ao login normal
   const accessToken = await this.jwtService.signAsync(
     { id: user.profile_id, email: user.profile_email },
-    { secret: process.env.ACCESS_TOKEN_SECRET, expiresIn: '30m' },
+    { secret: process.env.ACCESS_TOKEN_SECRET, expiresIn: '12h' },
   );
 
   const refreshToken = await this.jwtService.signAsync(
@@ -196,7 +196,7 @@ async refreshTokens(refreshToken: string, res) {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax',
-    maxAge: 30 * 60 * 1000,
+    maxAge: 12 * 60 * 60 * 1000,
   });
 
   res.cookie('REFRESH_TOKEN', refreshToken, {

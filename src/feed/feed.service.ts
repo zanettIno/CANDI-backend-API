@@ -26,21 +26,28 @@ export class FeedService {
     private readonly s3Provider: S3Provider,
   ) {}
 
+  private extractHashtags(text: string): string[] {
+    const matches = text.match(/#([a-zA-ZÀ-ú0-9_]+)/g) || [];
+    return [...new Set(matches.map(t => t.slice(1).toLowerCase()))];
+  }
+
   async createPost(
     user: AuthenticatedUser,
     dto: CreatePostDto,
     topic: string = 'GERAL',
     file?: { buffer: Buffer; mimetype: string; originalName: string },
-    subgroup?: string, // 1. RECEBE O NOVO PARÂMETRO AQUI
+    subgroup?: string,
   ) {
     const postId = randomUUID();
     const normalizedTopic = topic.toUpperCase().trim() || 'GERAL';
-    const normalizedSubgroup = subgroup?.toUpperCase().trim(); // 2. NORMALIZA O SUBGRUPO
-    let fileUrl: string | null = null; // Inicia como null (seguro para DynamoDB)
+    const normalizedSubgroup = subgroup?.toUpperCase().trim();
+    const hashtags = this.extractHashtags(dto.content);
+    let fileUrl: string | null = null;
 
     // 1. Upload do Arquivo (se existir)
     if (file) {
-      const fileKey = `${this.folderName}${postId}-${file.originalName}`;
+      const safeName = file.originalName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._\-]/g, '');
+      const fileKey = `${this.folderName}${postId}-${safeName}`;
       try {
         await this.s3Provider.client.send(
           new PutObjectCommand({
@@ -50,7 +57,7 @@ export class FeedService {
             ContentType: file.mimetype,
           }),
         );
-        fileUrl = `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+        fileUrl = `https://${this.bucketName}.s3.${process.env.AWS_S3_REGION || process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
       } catch (error) {
         console.error('Erro ao fazer upload para S3:', error);
         throw new InternalServerErrorException('Não foi possível salvar o arquivo da postagem.');
@@ -63,12 +70,12 @@ export class FeedService {
       profile_id: user.profile_id,
       profile_name: user.profile_name || user.profile_email,
       content: dto.content,
-      ...(fileUrl && { file_url: fileUrl }), 
+      ...(fileUrl && { file_url: fileUrl }),
       created_at: new Date().toISOString(),
       topic: normalizedTopic,
-      // 3. SALVA O SUBGRUPO (SE ELE EXISTIR)
       ...(normalizedSubgroup && { subgroup: normalizedSubgroup }),
-      feed_partition: this.allPostsPartition, 
+      ...(hashtags.length && { hashtags }),
+      feed_partition: this.allPostsPartition,
     };
 
     try {
@@ -105,16 +112,62 @@ export class FeedService {
       }),
     );
 
-    return result.Items || [];
+    return this.enrichPostsWithCounts(result.Items || []);
   }
   // ===================================================================
 
+  private async enrichPostsWithCounts(posts: any[]): Promise<any[]> {
+    if (!posts.length) return [];
+    const commentsTable = 'CANDIComments';
+    const likesTable = 'CANDIPostLikes';
+
+    const enriched = await Promise.all(
+      posts.map(async (post) => {
+        const [likesRes, commentsRes] = await Promise.all([
+          this.db.send(new QueryCommand({
+            TableName: likesTable,
+            KeyConditionExpression: 'post_id = :pid',
+            ExpressionAttributeValues: { ':pid': post.post_id },
+            Select: 'COUNT',
+          })),
+          this.db.send(new QueryCommand({
+            TableName: commentsTable,
+            KeyConditionExpression: 'post_id = :pid',
+            ExpressionAttributeValues: { ':pid': post.post_id },
+            Select: 'COUNT',
+          })),
+        ]);
+        return {
+          ...post,
+          like_count: likesRes.Count ?? 0,
+          comment_count: commentsRes.Count ?? 0,
+        };
+      }),
+    );
+    return enriched;
+  }
+
+  async searchByHashtag(tag: string) {
+    const normalized = tag.toLowerCase().replace(/^#/, '');
+    const result = await this.db.send(
+      new QueryCommand({
+        TableName: this.postsTable,
+        IndexName: 'AllPostsGSI',
+        KeyConditionExpression: 'feed_partition = :p',
+        FilterExpression: 'contains(hashtags, :tag)',
+        ExpressionAttributeValues: { ':p': this.allPostsPartition, ':tag': normalized },
+        ScanIndexForward: false,
+      }),
+    );
+    return this.enrichPostsWithCounts(result.Items || []);
+  }
+
   async getPostsByTopic(topic: string) {
     const normalizedTopic = topic.toUpperCase().trim();
-    if (!normalizedTopic || normalizedTopic === 'FEED') { // Trata 'FEED' como global
-        return this.getGlobalFeed();
+    if (!normalizedTopic || normalizedTopic === 'FEED') {
+      return this.getGlobalFeed();
     }
-    
+
     const result = await this.db.send(
       new QueryCommand({
         TableName: this.postsTable,
@@ -125,7 +178,7 @@ export class FeedService {
       }),
     );
 
-    return result.Items || [];
+    return this.enrichPostsWithCounts(result.Items || []);
   }
 
   async getGlobalFeed() {
@@ -139,6 +192,6 @@ export class FeedService {
       }),
     );
 
-    return result.Items || [];
+    return this.enrichPostsWithCounts(result.Items || []);
   }
 }

@@ -17,7 +17,7 @@ interface CreateContactPayload {
 
 @Injectable()
 export class EmergencyContactsService {
-  private readonly tableName = 'CandiEmergencyContacts';
+  private readonly tableName = 'CANDIEmergencyContacts';
 
   constructor(
     @Inject('DYNAMO_CLIENT')

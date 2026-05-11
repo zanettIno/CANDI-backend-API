@@ -10,7 +10,7 @@ import { AuthGuard } from './auth.guard';
     DynamoDBModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'default_secret',
-      signOptions: { expiresIn: '30m' },
+      signOptions: { expiresIn: '12h' },
     }),
   ],
   providers: [AuthService, AuthGuard],

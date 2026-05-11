@@ -6,7 +6,7 @@ import sharp from 'sharp';
 
 @Injectable()
 export class ProfileImageService {
-  private bucketName = process.env.AWS_S3_BUCKET_PROFILE || 'candi-image-uploads';
+  private bucketName = process.env.AWS_S3_BUCKET_PROFILE || 'awscandi-image-uploads';
 
   constructor(private readonly s3Provider: S3Provider) {}
 
@@ -30,7 +30,7 @@ export class ProfileImageService {
     );
 
     return {
-      url: `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`,
+      url: `https://${this.bucketName}.s3.${process.env.AWS_S3_REGION || process.env.AWS_REGION}.amazonaws.com/${key}`,
     };
   }
 
