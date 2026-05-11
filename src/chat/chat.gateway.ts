@@ -30,13 +30,14 @@ function safeRoom(conversationId: string): string {
 @WebSocketGateway({
   cors: { origin: '*', credentials: false },
   namespace: '/chat',
-  // Permite polling como fallback (essencial atrás de proxies como Cloudflare)
-  transports: ['polling', 'websocket'],
-  // Ping frequente para manter conexão viva através do Cloudflare (timeout de ~100s)
-  pingInterval: 25000,
-  pingTimeout: 60000,
-  // Aumenta buffer para evitar perda de mensagens em reconexão
+  transports: ['polling'],
+  // 8s: bem abaixo do timeout de 100s do Cloudflare Tunnel
+  pingInterval: 8000,
+  pingTimeout: 20000,
+  // Polling retorna imediatamente quando há evento; o cliente reconecta em seguida
+  // polling interval curto = latência baixa sem manter conexões longas
   maxHttpBufferSize: 1e6,
+  allowEIO3: true,
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()

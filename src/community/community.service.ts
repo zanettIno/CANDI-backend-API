@@ -214,7 +214,15 @@ export class CommunityService {
         ExpressionAttributeValues: { ':pid': profileId },
       }),
     );
-    return result.Items || [];
+    const members = result.Items || [];
+    // Enriquece com nome do grupo
+    const enriched = await Promise.all(members.map(async m => {
+      try {
+        const g = await this.db.send(new GetCommand({ TableName: this.groupsTable, Key: { group_id: m.group_id } }));
+        return { ...m, group_name: g.Item?.name || '', topic: g.Item?.topic || '' };
+      } catch { return m; }
+    }));
+    return enriched;
   }
 
   async getPendingRequests(user: AuthUser, groupId: string) {
@@ -324,20 +332,18 @@ export class CommunityService {
   async deleteGroupPost(user: AuthUser, groupId: string, postId: string) {
     await this.requireModRole(groupId, user.profile_id);
 
-    // Find the post to get its profile_id (needed for delete key)
-    const postResult = await this.db.send(new QueryCommand({
-      TableName: this.postsTable,
-      IndexName: 'AllPostsGSI',
-      KeyConditionExpression: 'feed_partition = :pk',
-      FilterExpression: 'post_id = :pid AND subgroup = :sg',
-      ExpressionAttributeValues: {
-        ':pk': 'GLOBAL_FEED',
-        ':pid': postId,
-        ':sg': groupId.toUpperCase(),
-      },
-    }));
-
-    const post = postResult.Items?.[0];
+    // Find the post — try both the groupId as-is and uppercase (subgroup may be stored either way)
+    let post: any = null;
+    for (const sgVariant of [groupId, groupId.toUpperCase(), groupId.toLowerCase()]) {
+      const postResult = await this.db.send(new QueryCommand({
+        TableName: this.postsTable,
+        IndexName: 'AllPostsGSI',
+        KeyConditionExpression: 'feed_partition = :pk',
+        FilterExpression: 'post_id = :pid AND subgroup = :sg',
+        ExpressionAttributeValues: { ':pk': 'GLOBAL_FEED', ':pid': postId, ':sg': sgVariant },
+      }));
+      if (postResult.Items?.[0]) { post = postResult.Items[0]; break; }
+    }
     if (!post) throw new NotFoundException('Publicação não encontrada neste grupo');
 
     await this.db.send(new DeleteCommand({
@@ -345,6 +351,38 @@ export class CommunityService {
       Key: { profile_id: post.profile_id, post_id: post.post_id },
     }));
     return { message: 'Publicação removida' };
+  }
+
+  async deleteGroup(user: AuthUser, groupId: string) {
+    const caller = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: user.profile_id },
+    }));
+    if (caller.Item?.role !== 'admin') throw new ForbiddenException('Apenas o administrador pode excluir o grupo');
+
+    // Deleta todos os membros
+    const membersResult = await this.db.send(new QueryCommand({
+      TableName: this.groupMembersTable,
+      KeyConditionExpression: 'group_id = :gid',
+      ExpressionAttributeValues: { ':gid': groupId },
+    }));
+    await Promise.all((membersResult.Items || []).map(m =>
+      this.db.send(new DeleteCommand({ TableName: this.groupMembersTable, Key: { group_id: groupId, profile_id: m.profile_id } }))
+    ));
+
+    // Deleta todas as mensagens do chat do grupo
+    const msgsResult = await this.db.send(new QueryCommand({
+      TableName: this.messagesTable,
+      KeyConditionExpression: 'conversation_id = :cid',
+      ExpressionAttributeValues: { ':cid': `GROUP#${groupId}` },
+    }));
+    await Promise.all((msgsResult.Items || []).map(m =>
+      this.db.send(new DeleteCommand({ TableName: this.messagesTable, Key: { conversation_id: m.conversation_id, timestamp: m.timestamp } }))
+    ));
+
+    // Deleta o grupo
+    await this.db.send(new DeleteCommand({ TableName: this.groupsTable, Key: { group_id: groupId } }));
+    return { message: 'Grupo excluído com sucesso' };
   }
 
   async getMyMemberStatus(profileId: string, groupId: string) {
@@ -492,12 +530,21 @@ export class CommunityService {
     return result.Items || [];
   }
 
-  async deleteComment(user: AuthUser, postId: string, commentId: string) {
+  async deleteComment(user: AuthUser, postId: string, commentId: string, groupId?: string) {
     const existing = await this.db.send(
       new GetCommand({ TableName: this.commentsTable, Key: { post_id: postId, comment_id: commentId } }),
     );
     if (!existing.Item) throw new NotFoundException('Comentário não encontrado');
-    if (existing.Item.profile_id !== user.profile_id) throw new ForbiddenException('Sem permissão');
+
+    const isOwner = existing.Item.profile_id === user.profile_id;
+    if (!isOwner) {
+      if (groupId) {
+        await this.requireModRole(groupId, user.profile_id); // lança ForbiddenException se não for mod
+      } else {
+        throw new ForbiddenException('Sem permissão');
+      }
+    }
+
     await this.db.send(
       new DeleteCommand({ TableName: this.commentsTable, Key: { post_id: postId, comment_id: commentId } }),
     );
@@ -566,7 +613,21 @@ export class CommunityService {
     const sharedContent = `__POST__:${JSON.stringify(sharedPayload)}`;
     const now = new Date().toISOString();
 
-    // Busca a entrada de conversa do usuário para obter o outro participante
+    const newMessage = {
+      conversation_id: conversationId,
+      timestamp: `${now}#${randomUUID()}`,
+      sender_id: user.profile_id,
+      sender_name: user.profile_nickname || user.profile_name,
+      message_content: sharedContent,
+    };
+
+    // Chat de grupo: só persiste a mensagem, sem inbox
+    if (conversationId.startsWith('GROUP#')) {
+      await this.db.send(new PutCommand({ TableName: this.messagesTable, Item: newMessage }));
+      return { message: 'Post compartilhado com sucesso', conversation_id: conversationId };
+    }
+
+    // Chat 1:1: busca o outro participante e atualiza inbox
     const convEntry = await this.db.send(new GetCommand({
       TableName: this.conversationsTable,
       Key: { profile_id: user.profile_id, conversation_id: conversationId },
@@ -577,18 +638,7 @@ export class CommunityService {
 
     await this.db.send(new TransactWriteCommand({
       TransactItems: [
-        {
-          Put: {
-            TableName: this.messagesTable,
-            Item: {
-              conversation_id: conversationId,
-              timestamp: `${now}#${randomUUID()}`,
-              sender_id: user.profile_id,
-              sender_name: user.profile_nickname || user.profile_name,
-              message_content: sharedContent,
-            },
-          },
-        },
+        { Put: { TableName: this.messagesTable, Item: newMessage } },
         {
           Update: {
             TableName: this.conversationsTable,

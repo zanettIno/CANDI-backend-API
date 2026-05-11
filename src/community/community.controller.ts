@@ -50,6 +50,11 @@ export class CommunityController {
     return this.communityService.getGroup(groupId);
   }
 
+  @Delete('groups/:groupId')
+  deleteGroup(@Req() req: AuthReq, @Param('groupId') groupId: string) {
+    return this.communityService.deleteGroup(req.user, groupId);
+  }
+
   @Post('groups/:groupId/join')
   joinGroup(@Req() req: AuthReq, @Param('groupId') groupId: string) {
     return this.communityService.joinGroup(req.user, groupId);
@@ -167,6 +172,16 @@ export class CommunityController {
     @Param('commentId') commentId: string,
   ) {
     return this.communityService.deleteComment(req.user, postId, commentId);
+  }
+
+  @Delete('groups/:groupId/comments/:commentId')
+  deleteGroupComment(
+    @Req() req: AuthReq,
+    @Param('groupId') groupId: string,
+    @Param('commentId') commentId: string,
+    @Query('postId') postId: string,
+  ) {
+    return this.communityService.deleteComment(req.user, postId, commentId, groupId);
   }
 
   // ─── COMPARTILHAR ───────────────────────────────────────────────────────────
