@@ -11,6 +11,7 @@ import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 import { JwtService } from '@nestjs/jwt';
 import { UnauthorizedException } from '@nestjs/common';
+import { createHash } from 'crypto';
 
 interface AuthenticatedSocket extends Socket {
   user?: {
@@ -21,16 +22,21 @@ interface AuthenticatedSocket extends Socket {
   };
 }
 
+// Converte conversationId (que pode ter #) em nome de sala seguro
+function safeRoom(conversationId: string): string {
+  return createHash('sha1').update(conversationId).digest('hex');
+}
+
 @WebSocketGateway({
-  cors: {
-    origin: ['http://localhost:8081', 'http://localhost:19006'],
-    credentials: true,
-  },
+  cors: { origin: '*', credentials: false },
   namespace: '/chat',
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
+
+  // profileId → Set<socketId>  (um user pode ter múltiplas abas/apps)
+  private onlineUsers = new Map<string, Set<string>>();
 
   constructor(
     private readonly chatService: ChatService,
@@ -43,7 +49,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.handshake.auth?.token ||
         client.handshake.headers?.authorization?.replace('Bearer ', '');
 
-      if (!token) throw new UnauthorizedException('Token não fornecido');
+      if (!token) throw new UnauthorizedException();
 
       const payload = this.jwtService.verify(token, {
         secret: process.env.JWT_SECRET,
@@ -56,36 +62,56 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         profile_nickname: payload.nickname || payload.name,
       };
 
-      console.log(`[Socket] Conectado: ${client.user.profile_id}`);
+      // Registra presença
+      const pid = client.user.profile_id;
+      if (!this.onlineUsers.has(pid)) this.onlineUsers.set(pid, new Set());
+      this.onlineUsers.get(pid)!.add(client.id);
+
+      // Informa todos que este user ficou online
+      this.server.emit('user_online', { profile_id: pid });
+
+      // Envia ao próprio client a lista de quem está online agora
+      client.emit('online_users', { online: [...this.onlineUsers.keys()] });
+
+      console.log(`[Socket] Conectado: ${pid} (${client.id})`);
     } catch {
       client.disconnect();
     }
   }
 
   handleDisconnect(client: AuthenticatedSocket) {
-    console.log(`[Socket] Desconectado: ${client.user?.profile_id || client.id}`);
+    if (!client.user) return;
+    const pid = client.user.profile_id;
+    const sockets = this.onlineUsers.get(pid);
+    if (sockets) {
+      sockets.delete(client.id);
+      if (sockets.size === 0) {
+        this.onlineUsers.delete(pid);
+        // Só emite offline quando não tem mais nenhuma conexão
+        this.server.emit('user_offline', { profile_id: pid });
+      }
+    }
+    console.log(`[Socket] Desconectado: ${pid} (${client.id})`);
   }
 
-  // Cliente entra na sala da conversa
   @SubscribeMessage('join_conversation')
   handleJoinConversation(
     @MessageBody() data: { conversationId: string },
     @ConnectedSocket() client: AuthenticatedSocket,
   ) {
-    client.join(data.conversationId);
-    client.emit('joined', { conversationId: data.conversationId });
+    const room = safeRoom(data.conversationId);
+    client.join(room);
+    client.emit('joined', { conversationId: data.conversationId, room });
   }
 
-  // Cliente sai da sala
   @SubscribeMessage('leave_conversation')
   handleLeaveConversation(
     @MessageBody() data: { conversationId: string },
     @ConnectedSocket() client: AuthenticatedSocket,
   ) {
-    client.leave(data.conversationId);
+    client.leave(safeRoom(data.conversationId));
   }
 
-  // Cliente envia mensagem via WebSocket
   @SubscribeMessage('send_message')
   async handleSendMessage(
     @MessageBody() data: { conversationId: string; messageContent: string },
@@ -103,24 +129,31 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         data.messageContent,
       );
 
-      // Emite a mensagem para todos na sala (incluindo remetente)
-      this.server.to(data.conversationId).emit('new_message', newMessage);
+      // Emite para todos na sala (remetente incluído)
+      const room = safeRoom(data.conversationId);
+      this.server.to(room).emit('new_message', newMessage);
     } catch (err: any) {
-      client.emit('error', { message: err.message || 'Erro ao enviar mensagem' });
+      client.emit('error', { message: err.message || 'Erro ao enviar' });
     }
   }
 
-  // Emite evento "digitando" para os outros da sala
   @SubscribeMessage('typing')
   handleTyping(
     @MessageBody() data: { conversationId: string; isTyping: boolean },
     @ConnectedSocket() client: AuthenticatedSocket,
   ) {
     if (!client.user) return;
-    client.to(data.conversationId).emit('user_typing', {
+    const room = safeRoom(data.conversationId);
+    client.to(room).emit('user_typing', {
       profile_id: client.user.profile_id,
       name: client.user.profile_nickname || client.user.profile_name,
       isTyping: data.isTyping,
     });
+  }
+
+  // Permite consultar presença via evento
+  @SubscribeMessage('get_online_users')
+  handleGetOnlineUsers(@ConnectedSocket() client: AuthenticatedSocket) {
+    client.emit('online_users', { online: [...this.onlineUsers.keys()] });
   }
 }
