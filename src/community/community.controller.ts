@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Delete,
+  Patch,
   Body,
   Param,
   Query,
@@ -12,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { CommunityService } from './community.service';
-import { CreateGroupDto } from './dto/community.dto';
+import { CreateGroupDto, UpdateGroupDto } from './dto/community.dto';
 
 interface AuthReq {
   user: {
@@ -48,6 +49,11 @@ export class CommunityController {
   @Get('groups/:groupId')
   getGroup(@Param('groupId') groupId: string) {
     return this.communityService.getGroup(groupId);
+  }
+
+  @Patch('groups/:groupId')
+  updateGroup(@Req() req: AuthReq, @Param('groupId') groupId: string, @Body() dto: UpdateGroupDto) {
+    return this.communityService.updateGroup(req.user, groupId, dto);
   }
 
   @Delete('groups/:groupId')

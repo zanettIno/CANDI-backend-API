@@ -21,3 +21,19 @@ export class JoinGroupDto {
   @IsNotEmpty()
   group_id: string;
 }
+
+export class UpdateGroupDto {
+  @IsString()
+  @IsOptional()
+  @MaxLength(80)
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(300)
+  description?: string;
+
+  @IsString()
+  @IsOptional()
+  topic?: string;
+}

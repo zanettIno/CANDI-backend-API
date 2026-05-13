@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   DynamoDBDocumentClient,
@@ -351,6 +352,43 @@ export class CommunityService {
       Key: { profile_id: post.profile_id, post_id: post.post_id },
     }));
     return { message: 'Publicação removida' };
+  }
+
+  async updateGroup(user: AuthUser, groupId: string, dto: any) {
+    const caller = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: user.profile_id },
+    }));
+    if (caller.Item?.role !== 'admin') throw new ForbiddenException('Apenas o administrador pode editar o grupo');
+
+    const updateFields: string[] = [];
+    const values: Record<string, any> = {};
+
+    if (dto.name !== undefined) {
+      updateFields.push('#n = :name');
+      values[':name'] = dto.name;
+    }
+    if (dto.description !== undefined) {
+      updateFields.push('#d = :desc');
+      values[':desc'] = dto.description;
+    }
+    if (dto.topic !== undefined) {
+      updateFields.push('topic = :topic');
+      values[':topic'] = dto.topic.toUpperCase();
+    }
+
+    if (updateFields.length === 0) throw new BadRequestException('Nenhum campo para atualizar');
+
+    await this.db.send(new UpdateCommand({
+      TableName: this.groupsTable,
+      Key: { group_id: groupId },
+      UpdateExpression: `SET ${updateFields.join(', ')}`,
+      ExpressionAttributeNames: { '#n': 'name', '#d': 'description' },
+      ExpressionAttributeValues: values,
+    }));
+
+    const updated = await this.getGroup(groupId);
+    return updated;
   }
 
   async deleteGroup(user: AuthUser, groupId: string) {
