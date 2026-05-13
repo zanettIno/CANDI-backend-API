@@ -57,7 +57,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.handshake.headers?.authorization?.replace('Bearer ', '');
 
       console.log(`[Socket] Token recebido: ${token ? token.substring(0, 50) + '...' : 'não'}`);
-      console.log(`[Socket] JWT_SECRET: ${process.env.JWT_SECRET ? 'definido' : 'INDEFINIDO'}`);
       if (!token) throw new UnauthorizedException('Sem token');
 
       const payload = this.jwtService.verify(token);
