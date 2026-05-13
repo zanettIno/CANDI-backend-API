@@ -119,7 +119,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const room = safeRoom(data.conversationId);
     console.log(`[Socket] ${client.user?.profile_id} entrou na conversa: ${data.conversationId} (room: ${room})`);
     client.join(room);
-    console.log(`[Socket] Room '${room}' agora tem ${this.server.sockets.adapter.rooms.get(room)?.size || 0} clientes`);
+    console.log(`[Socket] Room '${room}' agora tem ${this.server.sockets.adapter?.rooms?.get(room)?.size || 0} clientes`);
     client.emit('joined', { conversationId: data.conversationId, room });
   }
 
@@ -156,7 +156,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Emite para todos na sala (remetente incluído)
       const room = safeRoom(data.conversationId);
-      const roomSize = this.server.sockets.adapter.rooms.get(room)?.size || 0;
+      const roomSize = this.server.sockets.adapter?.rooms?.get(room)?.size || 0;
       console.log(`[Socket] Emitindo para sala '${room}' (${roomSize} clientes)`);
       console.log(`[Socket] Payload da mensagem:`, JSON.stringify(newMessage));
 
