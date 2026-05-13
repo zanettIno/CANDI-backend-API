@@ -18,7 +18,10 @@ import { MilestonesModule } from './treatment/milestones/milestones.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
     DynamoDBModule,
     AuthModule,
     SymptomsModule,
