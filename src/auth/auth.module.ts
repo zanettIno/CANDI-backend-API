@@ -9,7 +9,7 @@ import { AuthGuard } from './auth.guard';
   imports: [
     DynamoDBModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'default_secret',
+      secret: process.env.ACCESS_TOKEN_SECRET || 'default_secret',
       signOptions: { expiresIn: '12h' },
     }),
   ],
