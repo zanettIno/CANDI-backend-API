@@ -4,13 +4,17 @@ import { AuthController } from './auth.controller';
 import { DynamoDBModule } from '../dynamodb/dynamodb.module';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthGuard } from './auth.guard';
+import { ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
     DynamoDBModule,
-    JwtModule.register({
-      secret: process.env.ACCESS_TOKEN_SECRET || 'default_secret',
-      signOptions: { expiresIn: '12h' },
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get<string>('ACCESS_TOKEN_SECRET') || 'default_secret',
+        signOptions: { expiresIn: '12h' },
+      }),
     }),
   ],
   providers: [AuthService, AuthGuard],
@@ -18,7 +22,7 @@ import { AuthGuard } from './auth.guard';
   exports: [
     AuthService,
     AuthGuard,
-    JwtModule, // 🔹 exportando JwtModule para outros módulos
+    JwtModule,
   ],
 })
 export class AuthModule {}
