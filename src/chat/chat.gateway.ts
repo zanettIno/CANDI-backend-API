@@ -153,15 +153,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
 
       console.log(`[Socket] Mensagem salva: ${newMessage.timestamp}`);
+      console.log(`[Socket] Payload da mensagem:`, JSON.stringify(newMessage));
 
       // Emite para todos na sala (remetente incluído)
       const room = safeRoom(data.conversationId);
       const roomSize = this.server.sockets.adapter?.rooms?.get(room)?.size || 0;
       console.log(`[Socket] Emitindo para sala '${room}' (${roomSize} clientes)`);
-      console.log(`[Socket] Payload da mensagem:`, JSON.stringify(newMessage));
 
       this.server.to(room).emit('new_message', newMessage);
-      console.log(`[Socket] Mensagem emitida para ${roomSize} cliente(s)`);
+      console.log(`[Socket] Mensagem emitida com sucesso para ${roomSize} cliente(s)`);
     } catch (err: any) {
       console.error(`[Socket] Erro ao enviar: ${err.message}`, err);
       client.emit('error', { message: err.message || 'Erro ao enviar' });
