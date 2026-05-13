@@ -30,12 +30,10 @@ function safeRoom(conversationId: string): string {
 @WebSocketGateway({
   cors: { origin: '*', credentials: false },
   namespace: '/chat',
-  transports: ['polling'],
+  transports: ['websocket', 'polling'],
   // 8s: bem abaixo do timeout de 100s do Cloudflare Tunnel
   pingInterval: 8000,
   pingTimeout: 20000,
-  // Polling retorna imediatamente quando há evento; o cliente reconecta em seguida
-  // polling interval curto = latência baixa sem manter conexões longas
   maxHttpBufferSize: 1e6,
   allowEIO3: true,
 })
@@ -52,16 +50,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {}
 
   async handleConnection(client: AuthenticatedSocket) {
+    console.log(`[Socket] Nova conexão: ${client.id}`);
     try {
       const token =
         client.handshake.auth?.token ||
         client.handshake.headers?.authorization?.replace('Bearer ', '');
 
-      if (!token) throw new UnauthorizedException();
+      console.log(`[Socket] Token recebido: ${token ? token.substring(0, 50) + '...' : 'não'}`);
+      console.log(`[Socket] JWT_SECRET: ${process.env.JWT_SECRET ? 'definido' : 'INDEFINIDO'}`);
+      if (!token) throw new UnauthorizedException('Sem token');
 
-      const payload = this.jwtService.verify(token, {
-        secret: process.env.JWT_SECRET,
-      });
+      const payload = this.jwtService.verify(token);
+
+      console.log(`[Socket] Token verificado, userId: ${payload.id}`);
 
       client.user = {
         profile_id: payload.id,
@@ -75,31 +76,40 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!this.onlineUsers.has(pid)) this.onlineUsers.set(pid, new Set());
       this.onlineUsers.get(pid)!.add(client.id);
 
+      console.log(`[Socket] Usuário ${pid} online. Total online: ${this.onlineUsers.size}`);
+
       // Informa todos que este user ficou online
       this.server.emit('user_online', { profile_id: pid });
+      console.log(`[Socket] Emitido 'user_online' para ${pid}`);
 
       // Envia ao próprio client a lista de quem está online agora
-      client.emit('online_users', { online: [...this.onlineUsers.keys()] });
-
-      console.log(`[Socket] Conectado: ${pid} (${client.id})`);
-    } catch {
+      const onlineList = [...this.onlineUsers.keys()];
+      client.emit('online_users', { online: onlineList });
+      console.log(`[Socket] Emitido 'online_users' ao cliente ${client.id}: ${onlineList.join(', ')}`);
+    } catch (err: any) {
+      console.error(`[Socket] Erro na conexão: ${err.message}`, err);
       client.disconnect();
     }
   }
 
   handleDisconnect(client: AuthenticatedSocket) {
-    if (!client.user) return;
+    console.log(`[Socket] Desconexão de ${client.id}`);
+    if (!client.user) {
+      console.log(`[Socket] Cliente não tinha usuário autenticado`);
+      return;
+    }
     const pid = client.user.profile_id;
     const sockets = this.onlineUsers.get(pid);
     if (sockets) {
       sockets.delete(client.id);
+      console.log(`[Socket] Removido ${client.id} de ${pid}. Restantes: ${sockets.size}`);
       if (sockets.size === 0) {
         this.onlineUsers.delete(pid);
+        console.log(`[Socket] Usuário ${pid} completamente offline. Emitindo user_offline`);
         // Só emite offline quando não tem mais nenhuma conexão
         this.server.emit('user_offline', { profile_id: pid });
       }
     }
-    console.log(`[Socket] Desconectado: ${pid} (${client.id})`);
   }
 
   @SubscribeMessage('join_conversation')
@@ -108,7 +118,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthenticatedSocket,
   ) {
     const room = safeRoom(data.conversationId);
+    console.log(`[Socket] ${client.user?.profile_id} entrou na conversa: ${data.conversationId} (room: ${room})`);
     client.join(room);
+    console.log(`[Socket] Room '${room}' agora tem ${this.server.sockets.adapter.rooms.get(room)?.size || 0} clientes`);
     client.emit('joined', { conversationId: data.conversationId, room });
   }
 
@@ -125,22 +137,33 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string; messageContent: string },
     @ConnectedSocket() client: AuthenticatedSocket,
   ) {
+    console.log(`[Socket] send_message recebido de ${client.user?.profile_id}: "${data.messageContent}"`);
+
     if (!client.user) {
+      console.error(`[Socket] Usuário não autenticado`);
       client.emit('error', { message: 'Não autenticado' });
       return;
     }
 
     try {
+      console.log(`[Socket] Salvando mensagem no banco...`);
       const newMessage = await this.chatService.sendMessage(
         client.user,
         data.conversationId,
         data.messageContent,
       );
 
+      console.log(`[Socket] Mensagem salva: ${newMessage.timestamp}`);
+
       // Emite para todos na sala (remetente incluído)
       const room = safeRoom(data.conversationId);
+      const roomSize = this.server.sockets.adapter.rooms.get(room)?.size || 0;
+      console.log(`[Socket] Emitindo para sala '${room}' (${roomSize} clientes)`);
+
       this.server.to(room).emit('new_message', newMessage);
+      console.log(`[Socket] Mensagem emitida`);
     } catch (err: any) {
+      console.error(`[Socket] Erro ao enviar: ${err.message}`, err);
       client.emit('error', { message: err.message || 'Erro ao enviar' });
     }
   }
@@ -152,6 +175,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     if (!client.user) return;
     const room = safeRoom(data.conversationId);
+    console.log(`[Socket] ${client.user.profile_id} typing=${data.isTyping} em sala ${room}`);
     client.to(room).emit('user_typing', {
       profile_id: client.user.profile_id,
       name: client.user.profile_nickname || client.user.profile_name,
@@ -162,6 +186,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Permite consultar presença via evento
   @SubscribeMessage('get_online_users')
   handleGetOnlineUsers(@ConnectedSocket() client: AuthenticatedSocket) {
-    client.emit('online_users', { online: [...this.onlineUsers.keys()] });
+    const onlineList = [...this.onlineUsers.keys()];
+    console.log(`[Socket] get_online_users solicitado por ${client.user?.profile_id}. Online: ${onlineList.join(', ')}`);
+    client.emit('online_users', { online: onlineList });
   }
 }
