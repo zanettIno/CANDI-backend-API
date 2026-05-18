@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { CommunityService } from './community.service';
+import { ChatGateway } from '../chat/chat.gateway';
 import { CreateGroupDto, UpdateGroupDto } from './dto/community.dto';
 
 interface AuthReq {
@@ -27,7 +28,10 @@ interface AuthReq {
 @Controller('community')
 @UseGuards(AuthGuard)
 export class CommunityController {
-  constructor(private readonly communityService: CommunityService) {}
+  constructor(
+    private readonly communityService: CommunityService,
+    private readonly chatGateway: ChatGateway,
+  ) {}
 
   // ─── GRUPOS ────────────────────────────────────────────────────────────────
 
@@ -97,12 +101,15 @@ export class CommunityController {
   }
 
   @Delete('groups/:groupId/members/:profileId')
-  removeMember(
+  async removeMember(
     @Req() req: AuthReq,
     @Param('groupId') groupId: string,
     @Param('profileId') profileId: string,
   ) {
-    return this.communityService.removeMember(req.user, groupId, profileId);
+    const result = await this.communityService.removeMember(req.user, groupId, profileId);
+    // Notifica via WS o usuário removido para que o app o redirecione
+    this.chatGateway.notifyKickedFromGroup(groupId, profileId);
+    return result;
   }
 
   @Post('groups/:groupId/members/:profileId/role')
@@ -190,14 +197,37 @@ export class CommunityController {
     return this.communityService.deleteComment(req.user, postId, commentId, groupId);
   }
 
+  // ─── IMAGEM DE GRUPO ────────────────────────────────────────────────────────
+
+  @Post('groups/:groupId/image')
+  async uploadGroupImage(
+    @Req() req: any,
+    @Param('groupId') groupId: string,
+    @Query('type') type: 'photo' | 'banner' = 'photo',
+  ) {
+    const body = req.body as any;
+    const fileField = body?.file;
+    if (!fileField || !fileField._buf) {
+      throw new BadRequestException('Arquivo de imagem é obrigatório');
+    }
+    const imageBuffer = Buffer.from(fileField._buf);
+    const mimetype = fileField.mimetype || 'image/jpeg';
+    return this.communityService.uploadGroupImage(req.user, groupId, imageBuffer, mimetype, type);
+  }
+
   // ─── COMPARTILHAR ───────────────────────────────────────────────────────────
 
   @Post('posts/:postId/share')
-  sharePost(
+  async sharePost(
     @Req() req: AuthReq,
     @Param('postId') postId: string,
     @Body() body: { conversationId: string },
   ) {
-    return this.communityService.sharePostToConversation(req.user, postId, body.conversationId);
+    const result = await this.communityService.sharePostToConversation(req.user, postId, body.conversationId);
+    // Emite via WS para que receptores vejam a mensagem em tempo real
+    if (result.newMessage) {
+      this.chatGateway.emitNewMessage(body.conversationId, result.newMessage, req.user.profile_id);
+    }
+    return result;
   }
 }

@@ -12,6 +12,6 @@ import { DynamoDBModule } from '../dynamodb/dynamodb.module';
   ],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway],
-  exports: [ChatService],
+  exports: [ChatService, ChatGateway],
 })
 export class ChatModule {}

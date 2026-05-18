@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Res, Get, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Patch, Body, Res, Get, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthDto, RefreshDto, TokenVerifyDto } from './auth.dto';
 import { AuthGuard } from './auth.guard';
@@ -37,5 +37,16 @@ async googleLogin(@Body() body, @Res({ passthrough: true }) res) {
   @Get('me')
   getProfile(@Req() req) {
     return req.user;
+  }
+
+  @Patch('me')
+  @UseGuards(AuthGuard)
+  updateProfile(@Req() req, @Body() body: {
+    profile_name?: string;
+    profile_nickname?: string;
+    profile_birth_date?: string;
+    cancer_type_id?: number;
+  }) {
+    return this.authService.updateProfile(req.user.profile_id, body);
   }
 }

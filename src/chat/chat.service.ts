@@ -57,6 +57,43 @@ export class ChatService {
   }
 
 
+  /**
+   * Retorna o unread_count do OUTRO participante para indicar se leu ou não.
+   * unread_count = 0 para o outro => ele leu nossas mensagens.
+   */
+  async getReadStatus(myProfileId: string, conversationId: string): Promise<{ isRead: boolean; isDelivered: boolean }> {
+    if (conversationId.startsWith('GROUP#')) return { isRead: false, isDelivered: false };
+    const parts = conversationId.split('#');
+    const otherProfileId = parts.find(id => id !== myProfileId);
+    if (!otherProfileId) return { isRead: false, isDelivered: false };
+
+    const result = await this.db.send(new GetCommand({
+      TableName: this.conversationsTable,
+      Key: { profile_id: otherProfileId, conversation_id: conversationId },
+    }));
+
+    if (!result.Item) return { isRead: false, isDelivered: false };
+    const unread = result.Item.unread_count ?? 0;
+    const hasHistory = !!result.Item.last_message_timestamp;
+    // Entregue = conversa existe na inbox do outro (já recebeu ao menos 1 mensagem)
+    const isDelivered = hasHistory;
+    // Lida = entregue E unread_count = 0
+    const isRead = isDelivered && unread === 0;
+    return { isRead, isDelivered };
+  }
+
+  /** Zera unread_count do usuário para esta conversa (chamado pelo ack_read no gateway) */
+  async zeroUnreadCount(profileId: string, conversationId: string) {
+    if (conversationId.startsWith('GROUP#')) return;
+    await this.db.send(new UpdateCommand({
+      TableName: this.conversationsTable,
+      Key: { profile_id: profileId, conversation_id: conversationId },
+      UpdateExpression: 'SET unread_count = :zero',
+      ExpressionAttributeValues: { ':zero': 0 },
+      ConditionExpression: 'attribute_exists(profile_id)',
+    })).catch(() => {});
+  }
+
   async getInbox(profileId: string) {
     const result = await this.db.send(
       new QueryCommand({
@@ -172,7 +209,7 @@ export class ChatService {
         conversation_id: conversationId,
         timestamp: `${now}#${randomUUID()}`,
         sender_id: profile_id,
-        sender_name: profile_nickname || profile_name,
+        sender_name: profile_nickname || profile_name || (user.profile_email?.split('@')[0] ?? 'Usuário'),
         message_content: messageContent,
       };
       await this.db.send(new PutCommand({ TableName: this.messagesTable, Item: newMessage }));

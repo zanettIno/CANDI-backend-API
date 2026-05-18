@@ -1,6 +1,7 @@
-import { Controller, Get, Post, UseGuards, Req, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, UseGuards, Req, Query, BadRequestException } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { FeedService } from './feed.service';
+import { ChatGateway } from '../chat/chat.gateway';
 import { CreatePostDto } from './dto/feed.dto';
 import type { FastifyRequest } from 'fastify';
 
@@ -16,7 +17,10 @@ interface AuthenticatedRequest extends FastifyRequest {
 @Controller('feed')
 @UseGuards(AuthGuard)
 export class FeedController {
-  constructor(private readonly feedService: FeedService) {}
+  constructor(
+    private readonly feedService: FeedService,
+    private readonly chatGateway: ChatGateway,
+  ) {}
 
   @Post('posts')
   async createPost(
@@ -26,7 +30,6 @@ export class FeedController {
   ) {
     const body = req.body as any;
 
-    // Com attachFieldsToBody: true, campos de texto ficam em body.field.value
     const contentField = body?.content;
     const contentValue: string =
       typeof contentField === 'string'
@@ -37,7 +40,6 @@ export class FeedController {
       throw new BadRequestException('O campo "content" é obrigatório.');
     }
 
-    // Arquivo fica em body.file com ._buf (Buffer) e .mimetype e .filename
     let filePayload: { buffer: Buffer; mimetype: string; originalName: string } | undefined;
     const fileField = body?.file;
     if (fileField && fileField._buf) {
@@ -49,8 +51,21 @@ export class FeedController {
     }
 
     const dto: CreatePostDto = { content: contentValue };
+    const result = await this.feedService.createPost(req.user, dto, topic, filePayload, subgroup);
+    // Emite new_post via WebSocket para todos os clientes atualizarem o feed
+    this.chatGateway.broadcastNewPost({
+      post_id: result.post?.post_id,
+      topic: result.post?.topic,
+      subgroup: result.post?.subgroup,
+      profile_name: result.post?.profile_name,
+      profile_id: result.post?.profile_id,
+    });
+    return result;
+  }
 
-    return this.feedService.createPost(req.user, dto, topic, filePayload, subgroup);
+  @Delete('posts/:postId')
+  deletePost(@Req() req: AuthenticatedRequest, @Param('postId') postId: string) {
+    return this.feedService.deletePost(req.user.profile_id, postId);
   }
 
   @Get('posts')
@@ -58,10 +73,13 @@ export class FeedController {
     @Query('topic') topic?: string,
     @Query('subgroup') subgroup?: string,
     @Query('hashtag') hashtag?: string,
+    @Query('limit') limitStr?: string,
+    @Query('lastKey') lastKey?: string,
   ) {
-    if (hashtag) return this.feedService.searchByHashtag(hashtag);
-    if (subgroup) return this.feedService.getPostsBySubgroup(subgroup);
-    if (topic && topic.toUpperCase() !== 'FEED') return this.feedService.getPostsByTopic(topic);
-    return this.feedService.getGlobalFeed();
+    const limit = limitStr ? Math.min(parseInt(limitStr, 10) || 20, 50) : 20;
+    if (hashtag) return this.feedService.searchByHashtag(hashtag, limit, lastKey);
+    if (subgroup) return this.feedService.getPostsBySubgroup(subgroup, limit, lastKey);
+    if (topic && topic.toUpperCase() !== 'FEED') return this.feedService.getPostsByTopic(topic, limit, lastKey);
+    return this.feedService.getGlobalFeed(limit, lastKey);
   }
 }

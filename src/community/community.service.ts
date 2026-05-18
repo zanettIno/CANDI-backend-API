@@ -16,8 +16,12 @@ import {
   ScanCommand,
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import { CreateGroupDto } from './dto/community.dto';
+import { S3Provider } from '../s3/s3.provider';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+import sharp = require('sharp');
 
 type MemberRole = 'admin' | 'co-leader' | 'member' | 'pending';
 
@@ -39,10 +43,12 @@ export class CommunityService {
 
   private readonly messagesTable = 'CANDIMessages';
   private readonly conversationsTable = 'CANDIUserConversations';
+  private readonly bucketName = process.env.AWS_S3_BUCKET_FILE || 'awscandi-image-uploads';
 
   constructor(
     @Inject('DYNAMO_CLIENT')
     private readonly db: DynamoDBDocumentClient,
+    private readonly s3Provider: S3Provider,
   ) {}
 
   // ─── HELPERS ───────────────────────────────────────────────────────────────
@@ -331,21 +337,23 @@ export class CommunityService {
   }
 
   async deleteGroupPost(user: AuthUser, groupId: string, postId: string) {
-    await this.requireModRole(groupId, user.profile_id);
-
-    // Find the post — try both the groupId as-is and uppercase (subgroup may be stored either way)
+    // Busca o post antes de checar permissão
     let post: any = null;
-    for (const sgVariant of [groupId, groupId.toUpperCase(), groupId.toLowerCase()]) {
-      const postResult = await this.db.send(new QueryCommand({
+    for (const sg of [groupId, groupId.toUpperCase(), groupId.toLowerCase()]) {
+      const r = await this.db.send(new QueryCommand({
         TableName: this.postsTable,
         IndexName: 'AllPostsGSI',
         KeyConditionExpression: 'feed_partition = :pk',
         FilterExpression: 'post_id = :pid AND subgroup = :sg',
-        ExpressionAttributeValues: { ':pk': 'GLOBAL_FEED', ':pid': postId, ':sg': sgVariant },
+        ExpressionAttributeValues: { ':pk': 'GLOBAL_FEED', ':pid': postId, ':sg': sg },
       }));
-      if (postResult.Items?.[0]) { post = postResult.Items[0]; break; }
+      if (r.Items?.[0]) { post = r.Items[0]; break; }
     }
     if (!post) throw new NotFoundException('Publicação não encontrada neste grupo');
+
+    // Dono pode excluir a própria; mods podem excluir qualquer uma
+    const isOwner = post.profile_id === user.profile_id;
+    if (!isOwner) await this.requireModRole(groupId, user.profile_id);
 
     await this.db.send(new DeleteCommand({
       TableName: this.postsTable,
@@ -454,30 +462,36 @@ export class CommunityService {
       new GetCommand({ TableName: this.postsLikesTable, Key: likeKey }),
     );
 
+    const liked = !existing.Item;
+    const delta = liked ? 1 : -1;
+
     if (existing.Item) {
       await this.db.send(new DeleteCommand({ TableName: this.postsLikesTable, Key: likeKey }));
-      const count = await this.db.send(new QueryCommand({
-        TableName: this.postsLikesTable,
-        KeyConditionExpression: 'post_id = :pid',
-        ExpressionAttributeValues: { ':pid': postId },
-        Select: 'COUNT',
-      }));
-      return { liked: false, like_count: count.Count ?? 0 };
-    }
-
-    await this.db.send(
-      new PutCommand({
+    } else {
+      await this.db.send(new PutCommand({
         TableName: this.postsLikesTable,
         Item: { ...likeKey, liked_at: new Date().toISOString() },
-      }),
-    );
-    const count = await this.db.send(new QueryCommand({
-      TableName: this.postsLikesTable,
-      KeyConditionExpression: 'post_id = :pid',
-      ExpressionAttributeValues: { ':pid': postId },
-      Select: 'COUNT',
-    }));
-    return { liked: true, like_count: count.Count ?? 1 };
+      }));
+    }
+
+    // Atualiza like_count atomicamente e retorna o novo valor diretamente
+    try {
+      const post = await this.findPostByPostId(postId);
+      if (post) {
+        const updated = await this.db.send(new UpdateCommand({
+          TableName: this.postsTable,
+          Key: { profile_id: post.profile_id, post_id: postId },
+          UpdateExpression: 'ADD like_count :delta',
+          ExpressionAttributeValues: { ':delta': delta },
+          ReturnValues: 'UPDATED_NEW',
+        }));
+        const newCount = Math.max(0, (updated.Attributes?.like_count as number) ?? 0);
+        return { liked, like_count: newCount };
+      }
+    } catch { /* fall through */ }
+
+    // Fallback só se findPost falhar (não deveria acontecer)
+    return { liked, like_count: liked ? 1 : 0 };
   }
 
   async getPostLikes(postId: string) {
@@ -548,11 +562,23 @@ export class CommunityService {
       post_id: postId,
       comment_id: commentId,
       profile_id: user.profile_id,
-      author_name: user.profile_nickname || user.profile_name,
+      author_name: user.profile_nickname || user.profile_name || user.profile_email?.split('@')[0] || 'Usuário',
       text,
       created_at: new Date().toISOString(),
     };
     await this.db.send(new PutCommand({ TableName: this.commentsTable, Item: comment }));
+    // Incrementa comment_count no post atomicamente
+    try {
+      const post = await this.findPostByPostId(postId);
+      if (post) {
+        await this.db.send(new UpdateCommand({
+          TableName: this.postsTable,
+          Key: { profile_id: post.profile_id, post_id: postId },
+          UpdateExpression: 'ADD comment_count :inc',
+          ExpressionAttributeValues: { ':inc': 1 },
+        }));
+      }
+    } catch { /* não bloqueia */ }
     return comment;
   }
 
@@ -586,6 +612,20 @@ export class CommunityService {
     await this.db.send(
       new DeleteCommand({ TableName: this.commentsTable, Key: { post_id: postId, comment_id: commentId } }),
     );
+    // Decrementa comment_count no post atomicamente
+    try {
+      const post = await this.findPostByPostId(postId);
+      if (post) {
+        await this.db.send(new UpdateCommand({
+          TableName: this.postsTable,
+          Key: { profile_id: post.profile_id, post_id: postId },
+          UpdateExpression: 'ADD comment_count :dec',
+          ExpressionAttributeValues: { ':dec': -1 },
+          ConditionExpression: 'comment_count > :zero',
+          ExpressionAttributeNames: undefined,
+        })).catch(() => {}); // ignora se comment_count já for 0
+      }
+    } catch { /* não bloqueia */ }
     return { message: 'Comentário excluído' };
   }
 
@@ -630,6 +670,57 @@ export class CommunityService {
     return enriched;
   }
 
+  // ─── IMAGEM DE GRUPO ────────────────────────────────────────────────────────
+
+  async uploadGroupImage(
+    user: AuthUser,
+    groupId: string,
+    imageBuffer: Buffer,
+    mimetype: string,
+    type: 'photo' | 'banner',
+  ) {
+    const caller = await this.db.send(new GetCommand({
+      TableName: this.groupMembersTable,
+      Key: { group_id: groupId, profile_id: user.profile_id },
+    }));
+    if (caller.Item?.role !== 'admin') {
+      throw new ForbiddenException('Apenas o administrador pode alterar imagens do grupo');
+    }
+
+    const dimensions = type === 'banner'
+      ? { width: 1200, height: 400, fit: 'cover' as const }
+      : { width: 400, height: 400, fit: 'cover' as const };
+
+    let finalBuffer = imageBuffer;
+    try {
+      finalBuffer = await sharp(imageBuffer).resize(dimensions).webp({ quality: 80 }).toBuffer();
+      mimetype = 'image/webp';
+    } catch { /* fall through with original */ }
+
+    const key = `groups/${groupId}-${type}.webp?v=${Date.now()}`;
+    const cleanKey = `groups/${groupId}-${type}.webp`;
+    await this.s3Provider.client.send(new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: cleanKey,
+      Body: finalBuffer,
+      ContentType: mimetype,
+    }));
+
+    const region = process.env.AWS_S3_REGION || process.env.AWS_REGION;
+    const imageUrl = `https://${this.bucketName}.s3.${region}.amazonaws.com/${cleanKey}?v=${Date.now()}`;
+    const field = type === 'photo' ? 'photo_url' : 'banner_url';
+
+    await this.db.send(new UpdateCommand({
+      TableName: this.groupsTable,
+      Key: { group_id: groupId },
+      UpdateExpression: `SET ${field} = :url`,
+      ExpressionAttributeValues: { ':url': imageUrl },
+    }));
+
+    const updated = await this.getGroup(groupId);
+    return updated;
+  }
+
   // ─── COMPARTILHAR POST PARA CHAT ────────────────────────────────────────────
 
   async sharePostToConversation(
@@ -662,7 +753,7 @@ export class CommunityService {
     // Chat de grupo: só persiste a mensagem, sem inbox
     if (conversationId.startsWith('GROUP#')) {
       await this.db.send(new PutCommand({ TableName: this.messagesTable, Item: newMessage }));
-      return { message: 'Post compartilhado com sucesso', conversation_id: conversationId };
+      return { message: 'Post compartilhado com sucesso', conversation_id: conversationId, newMessage };
     }
 
     // Chat 1:1: busca o outro participante e atualiza inbox
@@ -696,6 +787,6 @@ export class CommunityService {
       ],
     }));
 
-    return { message: 'Post compartilhado com sucesso', conversation_id: conversationId };
+    return { message: 'Post compartilhado com sucesso', conversation_id: conversationId, newMessage };
   }
 }

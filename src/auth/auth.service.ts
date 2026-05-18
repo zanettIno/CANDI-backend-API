@@ -132,6 +132,35 @@ async refreshTokens(refreshToken: string, res) {
     return userProfile;
   }
 
+  // ==================== UPDATE USER PROFILE ====================
+  async updateProfile(userId: string, dto: {
+    profile_name?: string;
+    profile_nickname?: string;
+    profile_birth_date?: string;
+    cancer_type_id?: number;
+  }) {
+    const { UpdateCommand } = await import('@aws-sdk/lib-dynamodb');
+    const fields: string[] = [];
+    const values: Record<string, any> = {};
+    const names: Record<string, string> = {};
+
+    if (dto.profile_name?.trim()) { fields.push('#n = :n'); names['#n'] = 'profile_name'; values[':n'] = dto.profile_name.trim(); }
+    if (dto.profile_nickname !== undefined) { fields.push('#nn = :nn'); names['#nn'] = 'profile_nickname'; values[':nn'] = dto.profile_nickname.trim(); }
+    if (dto.profile_birth_date) { fields.push('profile_birth_date = :bd'); values[':bd'] = dto.profile_birth_date; }
+    if (dto.cancer_type_id !== undefined) { fields.push('cancer_type_id = :ct'); values[':ct'] = dto.cancer_type_id; }
+
+    if (fields.length === 0) return this.getProfile(userId);
+
+    await this.db.send(new UpdateCommand({
+      TableName: this.tableName,
+      Key: { profile_id: userId },
+      UpdateExpression: `SET ${fields.join(', ')}`,
+      ExpressionAttributeNames: Object.keys(names).length ? names : undefined,
+      ExpressionAttributeValues: values,
+    }));
+    return this.getProfile(userId);
+  }
+
   // ==================== FIND PROFILE BY EMAIL ====================
   async findProfileByEmail(email: string) {
     const result = await this.db.send(

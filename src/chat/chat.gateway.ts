@@ -161,11 +161,125 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       console.log(`[Socket] Emitindo para sala '${room}' (${roomSize} clientes)`);
 
       this.server.to(room).emit('new_message', newMessage);
+
+      if (!data.conversationId.startsWith('GROUP#')) {
+        const parts = data.conversationId.split('#');
+        const recipientId = parts.find(id => id !== client.user!.profile_id);
+        const senderSockets = this.onlineUsers.get(client.user!.profile_id);
+
+        if (recipientId) {
+          const recipientSockets = this.onlineUsers.get(recipientId);
+
+          if (recipientSockets) {
+            // Destinatário online → inbox_update (notificação)
+            for (const socketId of recipientSockets) {
+              this.server.to(socketId).emit('inbox_update', {
+                conversation_id: data.conversationId,
+                sender_name: client.user!.profile_nickname || client.user!.profile_name || client.user!.profile_email?.split('@')[0] || 'Usuário',
+                last_message: data.messageContent,
+                timestamp: newMessage.timestamp,
+              });
+            }
+            // Destinatário online → confirma entrega ao remetente
+            if (senderSockets) {
+              for (const socketId of senderSockets) {
+                this.server.to(socketId).emit('message_delivered', {
+                  conversation_id: data.conversationId,
+                });
+              }
+            }
+          }
+        }
+      }
+
       console.log(`[Socket] Mensagem emitida com sucesso para ${roomSize} cliente(s)`);
     } catch (err: any) {
       console.error(`[Socket] Erro ao enviar: ${err.message}`, err);
       client.emit('error', { message: err.message || 'Erro ao enviar' });
     }
+  }
+
+  // Emitido pelo receptor quando lê uma conversa (chat aberto ou clique "marcar como lida")
+  @SubscribeMessage('ack_read')
+  async handleAckRead(
+    @MessageBody() data: { conversationId: string },
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ) {
+    if (!client.user) return;
+    // Zera unread_count no DynamoDB para que o inbox reflita a leitura
+    await this.chatService.zeroUnreadCount(client.user.profile_id, data.conversationId);
+    // Notifica o remetente que as mensagens foram lidas (double check)
+    this.notifyMessagesRead(data.conversationId, client.user.profile_id);
+  }
+
+  /** Emite nova publicação para todos os clientes conectados */
+  broadcastNewPost(post: { post_id: string; topic: string; subgroup?: string; profile_name: string; profile_id: string }) {
+    this.server.emit('new_post', post);
+  }
+
+  /**
+   * Emite new_message para a sala + inbox_update ao receptor (para msgs enviadas via HTTP,
+   * como posts compartilhados, que não passam pelo handler send_message do WS)
+   */
+  emitNewMessage(conversationId: string, message: any, senderId: string) {
+    const room = safeRoom(conversationId);
+    this.server.to(room).emit('new_message', message);
+
+    if (!conversationId.startsWith('GROUP#')) {
+      const parts = conversationId.split('#');
+      const recipientId = parts.find(id => id !== senderId);
+      if (recipientId) {
+        const recipientSockets = this.onlineUsers.get(recipientId);
+        if (recipientSockets) {
+          for (const socketId of recipientSockets) {
+            this.server.to(socketId).emit('inbox_update', {
+              conversation_id: conversationId,
+              sender_name: message.sender_name,
+              last_message: '📌 Publicação compartilhada',
+              timestamp: message.timestamp,
+            });
+          }
+          // Confirma entrega ao remetente
+          const senderSockets = this.onlineUsers.get(senderId);
+          if (senderSockets) {
+            for (const socketId of senderSockets) {
+              this.server.to(socketId).emit('message_delivered', { conversation_id: conversationId });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /** Notifica usuário removido do grupo para que o app o redirecione */
+  notifyKickedFromGroup(groupId: string, kickedProfileId: string) {
+    const sockets = this.onlineUsers.get(kickedProfileId);
+    if (!sockets) return;
+    for (const socketId of sockets) {
+      this.server.to(socketId).emit('kicked_from_group', { group_id: groupId });
+    }
+  }
+
+  /**
+   * Chamado pelo ChatController após getMessages para notificar o REMETENTE
+   * que suas mensagens foram lidas pelo receptor.
+   */
+  notifyMessagesRead(conversationId: string, readerId: string) {
+    if (conversationId.startsWith('GROUP#')) return;
+    const parts = conversationId.split('#');
+    const senderId = parts.find(id => id !== readerId);
+    if (!senderId) return;
+
+    const senderSockets = this.onlineUsers.get(senderId);
+    if (!senderSockets) return;
+
+    for (const socketId of senderSockets) {
+      this.server.to(socketId).emit('messages_read', {
+        conversation_id: conversationId,
+        read_by: readerId,
+      });
+    }
+    console.log(`[Socket] messages_read enviado para ${senderId} (lido por ${readerId})`);
   }
 
   @SubscribeMessage('typing')
