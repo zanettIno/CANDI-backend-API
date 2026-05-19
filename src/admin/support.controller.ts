@@ -6,13 +6,17 @@ import { Controller, Get, Param, UseGuards, Req, ForbiddenException, NotFoundExc
 import { AuthGuard } from '../auth/auth.guard';
 import { DynamoDBDocumentClient, QueryCommand, GetCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { Inject } from '@nestjs/common';
+import { DiaryService } from '../diary/diary.service';
 
 interface AuthReq { user: { profile_id: string; role: string } }
 
 @Controller('support')
 @UseGuards(AuthGuard)
 export class SupportController {
-  constructor(@Inject('DYNAMO_CLIENT') private readonly db: DynamoDBDocumentClient) {}
+  constructor(
+    @Inject('DYNAMO_CLIENT') private readonly db: DynamoDBDocumentClient,
+    private readonly diaryService: DiaryService,
+  ) {}
 
   private async checkLink(supportId: string, patientId: string, permission: string) {
     const link = await this.db.send(new GetCommand({
@@ -96,17 +100,13 @@ export class SupportController {
     return result.Items || [];
   }
 
-  // ── Diário do paciente (só leitura) ────────────────────────────────────────
+  // ── Diário do paciente (só leitura via S3) ─────────────────────────────────
   @Get('patient/:patientId/diary')
   async getPatientDiary(@Req() req: AuthReq, @Param('patientId') patientId: string) {
     await this.checkLink(req.user.profile_id, patientId, 'diary_read');
-    // Diário é armazenado no S3, retorna lista de entradas
-    const result = await this.db.send(new GetCommand({
-      TableName: process.env.DYNAMO_TABLE_PROFILE || 'CANDIProfile',
-      Key: { profile_id: patientId },
-    }));
-    if (!result.Item) throw new NotFoundException('Paciente não encontrado');
-    return { patient_name: result.Item.profile_name, note: 'Diário acessível via S3' };
+    // Reutiliza DiaryService.listDiaries que lê os arquivos do S3
+    const entries = await this.diaryService.listDiaries(patientId);
+    return entries;
   }
 
   // ── Perfil básico do paciente ──────────────────────────────────────────────
