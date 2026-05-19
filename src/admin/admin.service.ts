@@ -73,7 +73,7 @@ export class AdminService {
       return { ...post, reports: reportsResult.Items || [] };
     }));
 
-    return enriched.sort((a, b) => (b.reports.length || b.report_count || 0) - (a.reports.length || a.report_count || 0));
+    return (enriched as any[]).sort((a, b) => (b.reports?.length || b.report_count || 0) - (a.reports?.length || a.report_count || 0));
   }
 
   // Retorna TODOS os posts que têm ao menos 1 denúncia (independente de status)
