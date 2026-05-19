@@ -85,4 +85,10 @@ async googleLogin(@Body() body, @Res({ passthrough: true }) res) {
   getMyPatient(@Req() req) {
     return this.authService.getMyPatient(req.user.profile_id);
   }
+
+  @Get('my-patients')
+  @UseGuards(AuthGuard)
+  getMyPatients(@Req() req) {
+    return this.authService.getMyPatients(req.user.profile_id);
+  }
 }

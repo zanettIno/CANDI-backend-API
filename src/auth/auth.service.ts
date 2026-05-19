@@ -302,31 +302,49 @@ async refreshTokens(refreshToken: string, res) {
   }) {
     const invite = await this.getInvite(body.invite_token);
 
+    // Verifica se já existe conta com esse e-mail
     const existing = await this.db.send(new ScanCommand({
       TableName: this.tableName,
       FilterExpression: 'profile_email = :email',
       ExpressionAttributeValues: { ':email': body.email },
     }));
-    if (existing.Items?.length) throw new BadRequestException('E-mail já cadastrado');
 
-    const hashedPassword = await bcrypt.hash(body.password, 10);
-    const profileId = randomUUID();
+    let profileId: string;
 
-    // Cria usuário com role 'support'
-    await this.db.send(new PutCommand({
-      TableName: this.tableName,
-      Item: {
-        profile_id: profileId,
-        profile_name: body.name,
-        profile_nickname: body.name,
-        profile_email: body.email,
-        profile_password: hashedPassword,
-        role: 'support',
-        profile_status: 'active',
-      },
+    if (existing.Items?.length) {
+      const user = existing.Items[0];
+      // Se já existe, valida senha e cria apenas o vínculo novo
+      const passwordMatch = await bcrypt.compare(body.password, user.profile_password);
+      if (!passwordMatch) throw new BadRequestException('Senha incorreta para esta conta');
+      if (user.role !== 'support' && user.role !== 'patient')
+        throw new BadRequestException('Esta conta não pode ser vinculada como rede de apoio');
+      profileId = user.profile_id;
+    } else {
+      // Cria nova conta com role 'support'
+      const hashedPassword = await bcrypt.hash(body.password, 10);
+      profileId = randomUUID();
+      await this.db.send(new PutCommand({
+        TableName: this.tableName,
+        Item: {
+          profile_id: profileId,
+          profile_name: body.name,
+          profile_nickname: body.name,
+          profile_email: body.email,
+          profile_password: hashedPassword,
+          role: 'support',
+          profile_status: 'active',
+        },
+      }));
+    }
+
+    // Verifica se o vínculo já existe
+    const linkExists = await this.db.send(new GetCommand({
+      TableName: 'CANDISupportLinks',
+      Key: { patient_id: invite.patient_id, support_id: profileId },
     }));
+    if (linkExists.Item) throw new BadRequestException('Você já está vinculado a este paciente');
 
-    // Cria o vínculo de apoio
+    // Cria o vínculo de apoio (suporte pode ter múltiplos pacientes)
     await this.db.send(new PutCommand({
       TableName: 'CANDISupportLinks',
       Item: {
@@ -334,6 +352,7 @@ async refreshTokens(refreshToken: string, res) {
         support_id: profileId,
         support_name: body.name,
         support_email: body.email,
+        patient_name: invite.patient_name,
         permissions: invite.permissions,
         status: 'active',
         linked_at: new Date().toISOString(),
@@ -349,7 +368,7 @@ async refreshTokens(refreshToken: string, res) {
       ExpressionAttributeValues: { ':true': true, ':uid': profileId },
     }));
 
-    return { message: 'Conta de rede de apoio criada com sucesso!' };
+    return { message: 'Vínculo criado com sucesso!', is_new_account: !existing.Items?.length };
   }
 
   async getMyInvites(patientId: string) {
@@ -375,18 +394,33 @@ async refreshTokens(refreshToken: string, res) {
     return result.Items || [];
   }
 
-  async getMyPatient(supportId: string) {
-    // Busca o paciente vinculado a este usuário de suporte
-    const result = await this.db.send(new ScanCommand({
+  async getMyPatients(supportId: string) {
+    // Busca TODOS os pacientes vinculados a este usuário de suporte via BySupportGSI
+    const result = await this.db.send(new QueryCommand({
       TableName: 'CANDISupportLinks',
-      FilterExpression: 'support_id = :sid AND #s = :active',
+      IndexName: 'BySupportGSI',
+      KeyConditionExpression: 'support_id = :sid',
+      FilterExpression: '#s = :active',
       ExpressionAttributeNames: { '#s': 'status' },
       ExpressionAttributeValues: { ':sid': supportId, ':active': 'active' },
     }));
-    const link = result.Items?.[0];
-    if (!link) return null;
-    const patient = await this.getProfile(link.patient_id);
-    return { ...patient, permissions: link.permissions };
+    const links = result.Items || [];
+    const patients = await Promise.all(
+      links.map(async link => {
+        try {
+          const patient = await this.getProfile(link.patient_id);
+          const { profile_password, ...safe } = patient as any;
+          return { ...safe, permissions: link.permissions, linked_at: link.linked_at };
+        } catch { return null; }
+      }),
+    );
+    return patients.filter(Boolean);
+  }
+
+  // Mantém por compatibilidade — retorna o primeiro paciente
+  async getMyPatient(supportId: string) {
+    const patients = await this.getMyPatients(supportId);
+    return patients[0] ?? null;
   }
 
   private async sendInviteEmail(to: string, patientName: string, token: string, permissions: string[]) {

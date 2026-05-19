@@ -104,6 +104,14 @@ const TABLES: CreateTableCommandInput[] = [
       { AttributeName: 'patient_id', AttributeType: 'S' },
       { AttributeName: 'support_id', AttributeType: 'S' },
     ],
+    // GSI para buscar todos os pacientes de um usuário de suporte
+    GlobalSecondaryIndexes: [
+      {
+        IndexName: 'BySupportGSI',
+        KeySchema: [{ AttributeName: 'support_id', KeyType: 'HASH' }],
+        Projection: { ProjectionType: 'ALL' },
+      },
+    ],
     ...PAY_PER_REQUEST,
   },
 
