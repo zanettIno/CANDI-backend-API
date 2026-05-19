@@ -242,10 +242,12 @@ export class FeedService {
     const post = result.Items?.[0];
     if (!post) throw new NotFoundException('Publicação não encontrada');
     if (post.profile_id !== profileId) throw new ForbiddenException('Você não pode excluir esta publicação');
+
     await this.db.send(new DeleteCommand({
       TableName: this.postsTable,
-      Key: { profile_id: post.profile_id, post_id: post.post_id },
+      Key: { post_id: post.post_id },
     }));
+
     return { message: 'Publicação excluída com sucesso' };
   }
 

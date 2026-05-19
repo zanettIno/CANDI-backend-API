@@ -357,7 +357,7 @@ export class CommunityService {
 
     await this.db.send(new DeleteCommand({
       TableName: this.postsTable,
-      Key: { profile_id: post.profile_id, post_id: post.post_id },
+      Key: { post_id: post.post_id },
     }));
     return { message: 'Publicação removida' };
   }
@@ -480,7 +480,7 @@ export class CommunityService {
       if (post) {
         const updated = await this.db.send(new UpdateCommand({
           TableName: this.postsTable,
-          Key: { profile_id: post.profile_id, post_id: postId },
+          Key: { post_id: postId },
           UpdateExpression: 'ADD like_count :delta',
           ExpressionAttributeValues: { ':delta': delta },
           ReturnValues: 'UPDATED_NEW',
@@ -573,7 +573,7 @@ export class CommunityService {
       if (post) {
         await this.db.send(new UpdateCommand({
           TableName: this.postsTable,
-          Key: { profile_id: post.profile_id, post_id: postId },
+          Key: { post_id: postId },
           UpdateExpression: 'ADD comment_count :inc',
           ExpressionAttributeValues: { ':inc': 1 },
         }));
@@ -618,7 +618,7 @@ export class CommunityService {
       if (post) {
         await this.db.send(new UpdateCommand({
           TableName: this.postsTable,
-          Key: { profile_id: post.profile_id, post_id: postId },
+          Key: { post_id: postId },
           UpdateExpression: 'ADD comment_count :dec',
           ExpressionAttributeValues: { ':dec': -1 },
           ConditionExpression: 'comment_count > :zero',
