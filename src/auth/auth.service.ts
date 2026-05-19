@@ -401,16 +401,28 @@ async refreshTokens(refreshToken: string, res) {
   }
 
   async getMyPatients(supportId: string) {
-    // Busca TODOS os pacientes vinculados a este usuário de suporte via BySupportGSI
-    const result = await this.db.send(new QueryCommand({
-      TableName: 'CANDISupportLinks',
-      IndexName: 'BySupportGSI',
-      KeyConditionExpression: 'support_id = :sid',
-      FilterExpression: '#s = :active',
-      ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: { ':sid': supportId, ':active': 'active' },
-    }));
-    const links = result.Items || [];
+    // Tenta GSI primeiro; se não existir (tabela criada antes do bootstrap) usa Scan
+    let links: any[] = [];
+    try {
+      const r = await this.db.send(new QueryCommand({
+        TableName: 'CANDISupportLinks',
+        IndexName: 'BySupportGSI',
+        KeyConditionExpression: 'support_id = :sid',
+        FilterExpression: '#s = :active',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':sid': supportId, ':active': 'active' },
+      }));
+      links = r.Items || [];
+    } catch {
+      // GSI ainda não existe — usa Scan com filtro
+      const r = await this.db.send(new ScanCommand({
+        TableName: 'CANDISupportLinks',
+        FilterExpression: 'support_id = :sid AND #s = :active',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':sid': supportId, ':active': 'active' },
+      }));
+      links = r.Items || [];
+    }
     const patients = await Promise.all(
       links.map(async link => {
         try {

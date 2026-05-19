@@ -19,23 +19,35 @@ export class SupportController {
       TableName: 'CANDISupportLinks',
       Key: { patient_id: patientId, support_id: supportId },
     }));
-    if (!link.Item || link.Item.status !== 'active') throw new ForbiddenException('Sem vínculo ativo com este paciente');
-    if (!link.Item.permissions?.includes(permission)) throw new ForbiddenException(`Sem permissão para ver ${permission}`);
+    if (!link.Item || link.Item.status !== 'active')
+      throw new ForbiddenException('Sem vínculo ativo com este paciente');
+    if (permission && !link.Item.permissions?.includes(permission))
+      throw new ForbiddenException(`Sem permissão para ver ${permission}`);
     return link.Item;
   }
 
   // ── Pacientes vinculados ──────────────────────────────────────────────────
   @Get('my-patients')
   async getMyPatients(@Req() req: AuthReq) {
-    const result = await this.db.send(new QueryCommand({
-      TableName: 'CANDISupportLinks',
-      IndexName: 'BySupportGSI',
-      KeyConditionExpression: 'support_id = :sid',
-      FilterExpression: '#s = :active',
-      ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: { ':sid': req.user.profile_id, ':active': 'active' },
-    }));
-    return result.Items || [];
+    try {
+      const r = await this.db.send(new QueryCommand({
+        TableName: 'CANDISupportLinks',
+        IndexName: 'BySupportGSI',
+        KeyConditionExpression: 'support_id = :sid',
+        FilterExpression: '#s = :active',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':sid': req.user.profile_id, ':active': 'active' },
+      }));
+      return r.Items || [];
+    } catch {
+      const r = await this.db.send(new ScanCommand({
+        TableName: 'CANDISupportLinks',
+        FilterExpression: 'support_id = :sid AND #s = :active',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':sid': req.user.profile_id, ':active': 'active' },
+      }));
+      return r.Items || [];
+    }
   }
 
   // ── Agenda do paciente ─────────────────────────────────────────────────────
