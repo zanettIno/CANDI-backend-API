@@ -450,7 +450,7 @@ async refreshTokens(refreshToken: string, res) {
           <p><strong>${patientName}</strong> te convidou para acompanhar sua jornada no CANDI.</p>
           <p>Com este acesso você poderá ver: <strong>${permList}</strong></p>
           <p>O convite expira em 7 dias.</p>
-          <a href="${appUrl}/cadastro?invite=${token}"
+          <a href="${appUrl}/cadastroSupport?invite=${token}"
              style="background: #759AAB; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; display: inline-block; margin: 16px 0;">
             Aceitar convite
           </a>
