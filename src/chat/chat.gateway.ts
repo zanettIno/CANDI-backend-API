@@ -273,13 +273,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const senderSockets = this.onlineUsers.get(senderId);
     if (!senderSockets) return;
 
+    // Inclui o timestamp de leitura para o frontend saber até qual ponto foi lido
+    const readUpTo = new Date().toISOString();
     for (const socketId of senderSockets) {
       this.server.to(socketId).emit('messages_read', {
         conversation_id: conversationId,
         read_by: readerId,
+        read_up_to: readUpTo,
       });
     }
-    console.log(`[Socket] messages_read enviado para ${senderId} (lido por ${readerId})`);
+    console.log(`[Socket] messages_read enviado para ${senderId} (lido por ${readerId} até ${readUpTo})`);
   }
 
   @SubscribeMessage('typing')

@@ -61,25 +61,33 @@ export class ChatService {
    * Retorna o unread_count do OUTRO participante para indicar se leu ou não.
    * unread_count = 0 para o outro => ele leu nossas mensagens.
    */
-  async getReadStatus(myProfileId: string, conversationId: string): Promise<{ isRead: boolean; isDelivered: boolean }> {
-    if (conversationId.startsWith('GROUP#')) return { isRead: false, isDelivered: false };
+  async getReadStatus(myProfileId: string, conversationId: string): Promise<{
+    isRead: boolean;
+    isDelivered: boolean;
+    readUpTo: string | null;
+  }> {
+    if (conversationId.startsWith('GROUP#')) return { isRead: false, isDelivered: false, readUpTo: null };
     const parts = conversationId.split('#');
     const otherProfileId = parts.find(id => id !== myProfileId);
-    if (!otherProfileId) return { isRead: false, isDelivered: false };
+    if (!otherProfileId) return { isRead: false, isDelivered: false, readUpTo: null };
 
     const result = await this.db.send(new GetCommand({
       TableName: this.conversationsTable,
       Key: { profile_id: otherProfileId, conversation_id: conversationId },
     }));
 
-    if (!result.Item) return { isRead: false, isDelivered: false };
-    const unread = result.Item.unread_count ?? 0;
+    if (!result.Item) return { isRead: false, isDelivered: false, readUpTo: null };
+
     const hasHistory = !!result.Item.last_message_timestamp;
-    // Entregue = conversa existe na inbox do outro (já recebeu ao menos 1 mensagem)
     const isDelivered = hasHistory;
-    // Lida = entregue E unread_count = 0
-    const isRead = isDelivered && unread === 0;
-    return { isRead, isDelivered };
+    // readUpTo: quando o outro usuario leu pela ultima vez
+    // Permite separar "mensagens lidas antes de readUpTo" de "novas mensagens nao lidas"
+    const readUpTo: string | null = result.Item.last_read_at ?? null;
+    // isRead = true apenas se readUpTo >= ultimo timestamp de mensagem
+    const isRead = isDelivered && !!readUpTo &&
+      readUpTo >= (result.Item.last_message_timestamp ?? '');
+
+    return { isRead, isDelivered, readUpTo };
   }
 
   /** Zera unread_count do usuário para esta conversa (chamado pelo ack_read no gateway) */
@@ -88,8 +96,8 @@ export class ChatService {
     await this.db.send(new UpdateCommand({
       TableName: this.conversationsTable,
       Key: { profile_id: profileId, conversation_id: conversationId },
-      UpdateExpression: 'SET unread_count = :zero',
-      ExpressionAttributeValues: { ':zero': 0 },
+      UpdateExpression: 'SET unread_count = :zero, last_read_at = :now',
+      ExpressionAttributeValues: { ':zero': 0, ':now': new Date().toISOString() },
       ConditionExpression: 'attribute_exists(profile_id)',
     })).catch(() => {});
   }
@@ -122,13 +130,14 @@ export class ChatService {
       }),
     );
     
-    // Zera contador de não lidas (não se aplica a chat de grupo)
+    // Zera contador de não lidas e grava last_read_at (não se aplica a chat de grupo)
     if (!conversationId.startsWith('GROUP#')) {
+      const now = new Date().toISOString();
       await this.db.send(new UpdateCommand({
           TableName: this.conversationsTable,
           Key: { profile_id: profileId, conversation_id: conversationId },
-          UpdateExpression: 'SET unread_count = :zero',
-          ExpressionAttributeValues: { ':zero': 0 },
+          UpdateExpression: 'SET unread_count = :zero, last_read_at = :now',
+          ExpressionAttributeValues: { ':zero': 0, ':now': now },
           ConditionExpression: 'attribute_exists(profile_id)'
       })).catch(err => {
         if (err.name !== 'ConditionalCheckFailedException') {
