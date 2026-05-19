@@ -64,7 +64,14 @@ async googleLogin(@Body() body, @Res({ passthrough: true }) res) {
   }
 
   @Post('register-support')
-  registerSupport(@Body() body: { name: string; email: string; password: string; invite_token: string }) {
+  registerSupport(@Body() body: {
+    name: string;
+    phone: string;
+    email: string;
+    password: string;
+    invite_token: string;
+    relationship: string;
+  }) {
     return this.authService.registerSupport(body);
   }
 
