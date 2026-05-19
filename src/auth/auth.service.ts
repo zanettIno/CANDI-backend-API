@@ -297,9 +297,11 @@ async refreshTokens(refreshToken: string, res) {
 
   async registerSupport(body: {
     name: string;
+    phone: string;
     email: string;
     password: string;
     invite_token: string;
+    relationship: string; // relação com o paciente: familiar, amigo, cônjuge, cuidador, outro
   }) {
     const invite = await this.getInvite(body.invite_token);
 
@@ -331,6 +333,7 @@ async refreshTokens(refreshToken: string, res) {
           profile_name: body.name,
           profile_nickname: body.name,
           profile_email: body.email,
+          profile_phone: body.phone,
           profile_password: hashedPassword,
           role: 'support',
           profile_status: 'active',
@@ -353,7 +356,9 @@ async refreshTokens(refreshToken: string, res) {
         support_id: profileId,
         support_name: body.name,
         support_email: body.email,
+        support_phone: body.phone,
         patient_name: invite.patient_name,
+        relationship: body.relationship,
         permissions: invite.permissions,
         status: 'active',
         linked_at: new Date().toISOString(),
