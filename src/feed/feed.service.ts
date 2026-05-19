@@ -144,8 +144,13 @@ export class FeedService {
         ...(this.decodeLastKey(lastKey) && { ExclusiveStartKey: this.decodeLastKey(lastKey) }),
       }),
     );
-    const items = await this.enrichPostsWithCounts(result.Items || []);
+    const items = await this.enrichPostsWithCounts(this.filterActive(result.Items || []));
     return { items, nextKey: this.encodeLastKey(result.LastEvaluatedKey) };
+  }
+
+  // Filtra posts suspensos ou removidos — só admin vê
+  private filterActive(posts: any[]): any[] {
+    return posts.filter(p => !p.status || p.status === 'active' || p.status === 'approved');
   }
 
   private async enrichPostsWithCounts(posts: any[]): Promise<any[]> {
@@ -206,7 +211,7 @@ export class FeedService {
         ...(this.decodeLastKey(lastKey) && { ExclusiveStartKey: this.decodeLastKey(lastKey) }),
       }),
     );
-    const items = await this.enrichPostsWithCounts(result.Items || []);
+    const items = await this.enrichPostsWithCounts(this.filterActive(result.Items || []));
     return { items, nextKey: this.encodeLastKey(result.LastEvaluatedKey) };
   }
 
@@ -227,7 +232,7 @@ export class FeedService {
         ...(this.decodeLastKey(lastKey) && { ExclusiveStartKey: this.decodeLastKey(lastKey) }),
       }),
     );
-    const items = await this.enrichPostsWithCounts(result.Items || []);
+    const items = await this.enrichPostsWithCounts(this.filterActive(result.Items || []));
     return { items, nextKey: this.encodeLastKey(result.LastEvaluatedKey) };
   }
 
@@ -264,7 +269,7 @@ export class FeedService {
         ...(this.decodeLastKey(lastKey) && { ExclusiveStartKey: this.decodeLastKey(lastKey) }),
       }),
     );
-    const items = await this.enrichPostsWithCounts(result.Items || []);
+    const items = await this.enrichPostsWithCounts(this.filterActive(result.Items || []));
     return { items, nextKey: this.encodeLastKey(result.LastEvaluatedKey) };
   }
 }

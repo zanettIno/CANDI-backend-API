@@ -15,6 +15,7 @@ import { ChatModule } from './chat/chat.module';
 import { FeedModule } from './feed/feed.module';
 import { CommunityModule } from './community/community.module';
 import { MilestonesModule } from './treatment/milestones/milestones.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { MilestonesModule } from './treatment/milestones/milestones.module';
     FeedModule,
     CommunityModule,
     MilestonesModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

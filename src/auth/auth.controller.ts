@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Body, Res, Get, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Patch, Body, Res, Get, Param, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthDto, RefreshDto, TokenVerifyDto } from './auth.dto';
 import { AuthGuard } from './auth.guard';
@@ -48,5 +48,41 @@ async googleLogin(@Body() body, @Res({ passthrough: true }) res) {
     cancer_type_id?: number;
   }) {
     return this.authService.updateProfile(req.user.profile_id, body);
+  }
+
+  // ── Convite rede de apoio ──────────────────────────────────────────────────
+
+  @Post('invite')
+  @UseGuards(AuthGuard)
+  createInvite(@Req() req, @Body() body: { email: string; permissions: string[] }) {
+    return this.authService.createInvite(req.user.profile_id, body);
+  }
+
+  @Get('invite/:token')
+  getInvite(@Param('token') token: string) {
+    return this.authService.getInvite(token);
+  }
+
+  @Post('register-support')
+  registerSupport(@Body() body: { name: string; email: string; password: string; invite_token: string }) {
+    return this.authService.registerSupport(body);
+  }
+
+  @Get('my-invites')
+  @UseGuards(AuthGuard)
+  getMyInvites(@Req() req) {
+    return this.authService.getMyInvites(req.user.profile_id);
+  }
+
+  @Get('support-network')
+  @UseGuards(AuthGuard)
+  getSupportNetwork(@Req() req) {
+    return this.authService.getMySupportNetwork(req.user.profile_id);
+  }
+
+  @Get('my-patient')
+  @UseGuards(AuthGuard)
+  getMyPatient(@Req() req) {
+    return this.authService.getMyPatient(req.user.profile_id);
   }
 }

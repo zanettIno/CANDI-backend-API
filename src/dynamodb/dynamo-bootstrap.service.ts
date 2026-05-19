@@ -63,6 +63,50 @@ const TABLES: CreateTableCommandInput[] = [
     ...PAY_PER_REQUEST,
   },
 
+  // ─── Moderação / Reports ─────────────────────────────────────────────────
+  {
+    TableName: 'CANDIReports',
+    KeySchema: [
+      { AttributeName: 'post_id', KeyType: 'HASH' },
+      { AttributeName: 'reporter_id', KeyType: 'RANGE' },
+    ],
+    AttributeDefinitions: [
+      { AttributeName: 'post_id', AttributeType: 'S' },
+      { AttributeName: 'reporter_id', AttributeType: 'S' },
+    ],
+    ...PAY_PER_REQUEST,
+  },
+
+  // ─── Rede de Apoio ───────────────────────────────────────────────────────
+  {
+    TableName: 'CANDIInvites',
+    KeySchema: [{ AttributeName: 'invite_token', KeyType: 'HASH' }],
+    AttributeDefinitions: [
+      { AttributeName: 'invite_token', AttributeType: 'S' },
+      { AttributeName: 'patient_id', AttributeType: 'S' },
+    ],
+    GlobalSecondaryIndexes: [
+      {
+        IndexName: 'ByPatientGSI',
+        KeySchema: [{ AttributeName: 'patient_id', KeyType: 'HASH' }],
+        Projection: { ProjectionType: 'ALL' },
+      },
+    ],
+    ...PAY_PER_REQUEST,
+  },
+  {
+    TableName: 'CANDISupportLinks',
+    KeySchema: [
+      { AttributeName: 'patient_id', KeyType: 'HASH' },
+      { AttributeName: 'support_id', KeyType: 'RANGE' },
+    ],
+    AttributeDefinitions: [
+      { AttributeName: 'patient_id', AttributeType: 'S' },
+      { AttributeName: 'support_id', AttributeType: 'S' },
+    ],
+    ...PAY_PER_REQUEST,
+  },
+
   // ─── Feed / Community ────────────────────────────────────────────────────
   {
     TableName: 'CANDIPosts',

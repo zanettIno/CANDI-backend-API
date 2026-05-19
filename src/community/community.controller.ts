@@ -197,6 +197,18 @@ export class CommunityController {
     return this.communityService.deleteComment(req.user, postId, commentId, groupId);
   }
 
+  // ─── DENÚNCIAS ──────────────────────────────────────────────────────────────
+
+  @Post('posts/:postId/report')
+  reportPost(
+    @Req() req: AuthReq,
+    @Param('postId') postId: string,
+    @Body() body: { reason: string },
+  ) {
+    if (!body?.reason?.trim()) throw new BadRequestException('Motivo da denúncia é obrigatório');
+    return this.communityService.reportPost(req.user, postId, body.reason.trim());
+  }
+
   // ─── IMAGEM DE GRUPO ────────────────────────────────────────────────────────
 
   @Post('groups/:groupId/image')

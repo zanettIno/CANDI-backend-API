@@ -722,6 +722,58 @@ export class CommunityService {
     return updated;
   }
 
+  // ─── DENÚNCIAS / MODERAÇÃO ──────────────────────────────────────────────────
+
+  private readonly reportsTable = 'CANDIReports';
+  private readonly profileTable = 'CANDIProfile';
+  private readonly REPORT_THRESHOLD = 3;  // suspende com 3 denúncias
+  private readonly BAN_THRESHOLD = 3;     // bane usuário com 3 posts banidos
+
+  async reportPost(user: AuthUser, postId: string, reason: string) {
+    // Impede denúncia dupla do mesmo usuário
+    const existing = await this.db.send(new GetCommand({
+      TableName: this.reportsTable,
+      Key: { post_id: postId, reporter_id: user.profile_id },
+    }));
+    if (existing.Item) throw new ConflictException('Você já denunciou esta publicação');
+
+    // Busca o post para verificar status e obter post_id key
+    const post = await this.findPostByPostId(postId);
+    if (!post) throw new NotFoundException('Publicação não encontrada');
+    if (post.status === 'approved') throw new BadRequestException('Esta publicação foi revisada e aprovada');
+    if (post.status === 'removed') throw new BadRequestException('Esta publicação já foi removida');
+
+    // Salva a denúncia
+    await this.db.send(new PutCommand({
+      TableName: this.reportsTable,
+      Item: { post_id: postId, reporter_id: user.profile_id, reason, created_at: new Date().toISOString() },
+    }));
+
+    // Incrementa report_count no post atomicamente
+    const updated = await this.db.send(new UpdateCommand({
+      TableName: this.postsTable,
+      Key: { post_id: postId },
+      UpdateExpression: 'ADD report_count :inc',
+      ExpressionAttributeValues: { ':inc': 1 },
+      ReturnValues: 'UPDATED_NEW',
+    }));
+
+    const newCount = (updated.Attributes?.report_count as number) ?? 1;
+
+    // Suspende automaticamente ao atingir o threshold
+    if (newCount >= this.REPORT_THRESHOLD && post.status !== 'suspended') {
+      await this.db.send(new UpdateCommand({
+        TableName: this.postsTable,
+        Key: { post_id: postId },
+        UpdateExpression: 'SET #s = :suspended',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':suspended': 'suspended' },
+      }));
+    }
+
+    return { message: 'Denúncia registrada com sucesso' };
+  }
+
   // ─── COMPARTILHAR POST PARA CHAT ────────────────────────────────────────────
 
   async sharePostToConversation(
