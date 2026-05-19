@@ -26,7 +26,7 @@ const PAGE_SIZE = 5;
 export class FeedService {
   private readonly postsTable = 'CANDIPosts';
   private readonly allPostsPartition = 'GLOBAL_FEED';
-  private readonly bucketName = process.env.AWS_S3_BUCKET_FILE || 'awscandi-image-uploads';
+  private readonly bucketName = process.env.AWS_S3_BUCKET_PROFILE || 'awscandi-image-uploads';
   private readonly folderName = 'postagens/';
 
   constructor(

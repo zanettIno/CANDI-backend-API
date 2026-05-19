@@ -17,7 +17,7 @@ import { Readable } from 'stream';
 
 @Injectable()
 export class DiaryService {
-  private readonly bucketName = process.env.AWS_S3_BUCKET_FILE || 'candi-file-uploads';
+  private readonly bucketName = process.env.AWS_S3_BUCKET_FILE || 'awscandi-file-uploads';
   private readonly folderName = 'diary/';
 
   constructor(private readonly s3Provider: S3Provider) {}

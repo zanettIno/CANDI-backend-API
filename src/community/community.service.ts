@@ -43,7 +43,7 @@ export class CommunityService {
 
   private readonly messagesTable = 'CANDIMessages';
   private readonly conversationsTable = 'CANDIUserConversations';
-  private readonly bucketName = process.env.AWS_S3_BUCKET_FILE || 'awscandi-image-uploads';
+  private readonly bucketName = process.env.AWS_S3_BUCKET_PROFILE || 'awscandi-image-uploads';
 
   constructor(
     @Inject('DYNAMO_CLIENT')
