@@ -15,6 +15,9 @@ export class AdminController {
   @Get('posts/suspended')
   getSuspendedPosts() { return this.adminService.getSuspendedPosts(); }
 
+  @Get('reports/all')
+  getAllReports() { return this.adminService.getAllReports(); }
+
   @Get('posts/:postId/reports')
   getPostReports(@Param('postId') postId: string) {
     return this.adminService.getPostReports(postId);

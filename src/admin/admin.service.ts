@@ -50,13 +50,14 @@ export class AdminService {
   // ── Posts suspensos com detalhes das denúncias ────────────────────────────
 
   async getSuspendedPosts() {
+    // Busca posts com status=suspended OU com report_count >= 3 (posts antigos sem status)
     const result = await this.db.send(new QueryCommand({
       TableName: this.postsTable,
       IndexName: 'AllPostsGSI',
       KeyConditionExpression: 'feed_partition = :pk',
-      FilterExpression: '#s = :suspended',
+      FilterExpression: '#s = :suspended OR (attribute_not_exists(#s) AND report_count >= :threshold)',
       ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: { ':pk': 'GLOBAL_FEED', ':suspended': 'suspended' },
+      ExpressionAttributeValues: { ':pk': 'GLOBAL_FEED', ':suspended': 'suspended', ':threshold': 3 },
       ScanIndexForward: false,
     }));
 
@@ -72,7 +73,39 @@ export class AdminService {
       return { ...post, reports: reportsResult.Items || [] };
     }));
 
-    return enriched.sort((a, b) => (b.reports.length) - (a.reports.length));
+    return enriched.sort((a, b) => (b.reports.length || b.report_count || 0) - (a.reports.length || a.report_count || 0));
+  }
+
+  // Retorna TODOS os posts que têm ao menos 1 denúncia (independente de status)
+  async getAllReports() {
+    const reportsResult = await this.db.send(new ScanCommand({ TableName: this.reportsTable }));
+    const reports = reportsResult.Items || [];
+
+    // Agrupa por post_id
+    const byPost: Record<string, any[]> = {};
+    for (const r of reports) {
+      if (!byPost[r.post_id]) byPost[r.post_id] = [];
+      byPost[r.post_id].push(r);
+    }
+
+    // Busca os posts
+    const postIds = Object.keys(byPost);
+    const posts = await Promise.all(postIds.map(async postId => {
+      const postResult = await this.db.send(new QueryCommand({
+        TableName: this.postsTable,
+        IndexName: 'AllPostsGSI',
+        KeyConditionExpression: 'feed_partition = :pk',
+        FilterExpression: 'post_id = :pid',
+        ExpressionAttributeValues: { ':pk': 'GLOBAL_FEED', ':pid': postId },
+      }));
+      const post = postResult.Items?.[0];
+      if (!post) return null;
+      return { ...post, reports: byPost[postId] };
+    }));
+
+    return posts
+      .filter(Boolean)
+      .sort((a, b) => (b!.reports.length) - (a!.reports.length));
   }
 
   async approvePost(postId: string) {
