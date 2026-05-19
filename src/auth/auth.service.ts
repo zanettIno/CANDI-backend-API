@@ -23,6 +23,7 @@ export class AuthService {
     password: string;
     birth_date: string;
     cancer_type_id: number;
+    adminSecret?: string;
   }) {
     const existing = await this.db.send(
       new ScanCommand({
