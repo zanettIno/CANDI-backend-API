@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Delete, Param, Body, UseGuards, Req } from '@nestjs/common';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
 
@@ -6,6 +6,10 @@ import { AdminService } from './admin.service';
 @UseGuards(AdminGuard)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
+
+  // ── Dashboard ──────────────────────────────────────────────────────────────
+  @Get('stats')
+  getStats() { return this.adminService.getStats(); }
 
   // ── Posts suspensos ────────────────────────────────────────────────────────
   @Get('posts/suspended')
@@ -33,5 +37,28 @@ export class AdminController {
   @Patch('users/:userId/unban')
   unbanUser(@Param('userId') userId: string) {
     return this.adminService.unbanUser(userId);
+  }
+
+  // ── Gestão de admins ───────────────────────────────────────────────────────
+  @Get('admins')
+  getAdmins() { return this.adminService.getAdmins(); }
+
+  @Post('admins')
+  createAdmin(@Body() body: { name: string; email: string; password: string }) {
+    return this.adminService.createAdmin(body);
+  }
+
+  @Delete('admins/:adminId')
+  deleteAdmin(@Req() req: any, @Param('adminId') adminId: string) {
+    return this.adminService.deleteAdmin(req.user.profile_id, adminId);
+  }
+
+  // ── Configurações do próprio admin ─────────────────────────────────────────
+  @Patch('me/credentials')
+  updateMyCredentials(
+    @Req() req: any,
+    @Body() body: { email?: string; password?: string; current_password: string },
+  ) {
+    return this.adminService.updateMyCredentials(req.user.profile_id, body);
   }
 }

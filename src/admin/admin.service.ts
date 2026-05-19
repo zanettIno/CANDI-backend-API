@@ -1,8 +1,10 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import {
   DynamoDBDocumentClient, QueryCommand, ScanCommand,
-  UpdateCommand, GetCommand,
+  UpdateCommand, GetCommand, DeleteCommand, PutCommand,
 } from '@aws-sdk/lib-dynamodb';
+import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AdminService {
@@ -13,7 +15,39 @@ export class AdminService {
 
   constructor(@Inject('DYNAMO_CLIENT') private readonly db: DynamoDBDocumentClient) {}
 
-  // ── Posts suspensos ────────────────────────────────────────────────────────
+  // ── Dashboard / Stats ─────────────────────────────────────────────────────
+
+  async getStats() {
+    const [suspended, banned, reports] = await Promise.all([
+      this.db.send(new QueryCommand({
+        TableName: this.postsTable,
+        IndexName: 'AllPostsGSI',
+        KeyConditionExpression: 'feed_partition = :pk',
+        FilterExpression: '#s = :suspended',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':pk': 'GLOBAL_FEED', ':suspended': 'suspended' },
+        Select: 'COUNT',
+      })),
+      this.db.send(new ScanCommand({
+        TableName: this.profileTable,
+        FilterExpression: 'profile_status = :banned',
+        ExpressionAttributeValues: { ':banned': 'banned' },
+        Select: 'COUNT',
+      })),
+      this.db.send(new ScanCommand({
+        TableName: this.reportsTable,
+        Select: 'COUNT',
+      })),
+    ]);
+
+    return {
+      suspended_posts: suspended.Count ?? 0,
+      banned_users: banned.Count ?? 0,
+      total_reports: reports.Count ?? 0,
+    };
+  }
+
+  // ── Posts suspensos com detalhes das denúncias ────────────────────────────
 
   async getSuspendedPosts() {
     const result = await this.db.send(new QueryCommand({
@@ -25,36 +59,45 @@ export class AdminService {
       ExpressionAttributeValues: { ':pk': 'GLOBAL_FEED', ':suspended': 'suspended' },
       ScanIndexForward: false,
     }));
-    return result.Items || [];
+
+    const posts = result.Items || [];
+
+    // Busca as denúncias de cada post em paralelo
+    const enriched = await Promise.all(posts.map(async post => {
+      const reportsResult = await this.db.send(new QueryCommand({
+        TableName: this.reportsTable,
+        KeyConditionExpression: 'post_id = :pid',
+        ExpressionAttributeValues: { ':pid': post.post_id },
+      }));
+      return { ...post, reports: reportsResult.Items || [] };
+    }));
+
+    return enriched.sort((a, b) => (b.reports.length) - (a.reports.length));
   }
 
-  /** Aprova: restaura o post, marca como 'approved' (imune a novas denúncias) */
   async approvePost(postId: string) {
     await this.db.send(new UpdateCommand({
       TableName: this.postsTable,
       Key: { post_id: postId },
-      UpdateExpression: 'SET #s = :approved, report_count = :zero',
+      UpdateExpression: 'SET #s = :approved, report_count = :zero, reviewed_at = :now',
       ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: { ':approved': 'approved', ':zero': 0 },
+      ExpressionAttributeValues: { ':approved': 'approved', ':zero': 0, ':now': new Date().toISOString() },
     }));
-    return { message: 'Publicação restaurada e marcada como aprovada.' };
+    return { message: 'Publicação restaurada e marcada como aprovada (imune a denúncias).' };
   }
 
-  /** Remove definitivamente: incrementa banned_posts_count do autor, bane se >= 3 */
   async removePost(postId: string) {
     const post = await this.findPost(postId);
     if (!post) throw new NotFoundException('Publicação não encontrada');
 
-    // Marca como removido
     await this.db.send(new UpdateCommand({
       TableName: this.postsTable,
       Key: { post_id: postId },
-      UpdateExpression: 'SET #s = :removed',
+      UpdateExpression: 'SET #s = :removed, removed_at = :now',
       ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: { ':removed': 'removed' },
+      ExpressionAttributeValues: { ':removed': 'removed', ':now': new Date().toISOString() },
     }));
 
-    // Incrementa banned_posts_count do autor
     const banUpdate = await this.db.send(new UpdateCommand({
       TableName: this.profileTable,
       Key: { profile_id: post.profile_id },
@@ -64,8 +107,6 @@ export class AdminService {
     }));
 
     const bannedCount = (banUpdate.Attributes?.banned_posts_count as number) ?? 1;
-
-    // Bane o usuário automaticamente se atingiu o threshold
     if (bannedCount >= this.BAN_THRESHOLD) {
       await this.db.send(new UpdateCommand({
         TableName: this.profileTable,
@@ -75,11 +116,7 @@ export class AdminService {
       }));
     }
 
-    return {
-      message: 'Publicação removida.',
-      author_banned: bannedCount >= this.BAN_THRESHOLD,
-      banned_posts_count: bannedCount,
-    };
+    return { message: 'Publicação removida.', author_banned: bannedCount >= this.BAN_THRESHOLD, banned_posts_count: bannedCount };
   }
 
   // ── Usuários banidos ───────────────────────────────────────────────────────
@@ -87,11 +124,12 @@ export class AdminService {
   async getBannedUsers() {
     const result = await this.db.send(new ScanCommand({
       TableName: this.profileTable,
-      FilterExpression: 'profile_status = :banned',
-      ExpressionAttributeValues: { ':banned': 'banned' },
+      FilterExpression: 'profile_status = :banned AND (#r = :patient OR attribute_not_exists(#r))',
+      ExpressionAttributeNames: { '#r': 'role' },
+      ExpressionAttributeValues: { ':banned': 'banned', ':patient': 'patient' },
       ProjectionExpression: 'profile_id, profile_name, profile_email, banned_at, banned_posts_count',
     }));
-    return result.Items || [];
+    return (result.Items || []).sort((a, b) => (b.banned_at ?? '').localeCompare(a.banned_at ?? ''));
   }
 
   async unbanUser(userId: string) {
@@ -104,7 +142,102 @@ export class AdminService {
     return { message: 'Usuário desbanido.' };
   }
 
-  // ── Denúncias de um post ──────────────────────────────────────────────────
+  // ── Gestão de admins ──────────────────────────────────────────────────────
+
+  async getAdmins() {
+    const result = await this.db.send(new ScanCommand({
+      TableName: this.profileTable,
+      FilterExpression: '#r = :admin',
+      ExpressionAttributeNames: { '#r': 'role' },
+      ExpressionAttributeValues: { ':admin': 'admin' },
+      ProjectionExpression: 'profile_id, profile_name, profile_email, is_superadmin, created_at',
+    }));
+    return result.Items || [];
+  }
+
+  async createAdmin(data: { name: string; email: string; password: string }) {
+    const existing = await this.db.send(new ScanCommand({
+      TableName: this.profileTable,
+      FilterExpression: 'profile_email = :email',
+      ExpressionAttributeValues: { ':email': data.email },
+    }));
+    if (existing.Items?.length) throw new BadRequestException('E-mail já cadastrado');
+
+    const hash = await bcrypt.hash(data.password, 10);
+    const profileId = randomUUID();
+    await this.db.send(new PutCommand({
+      TableName: this.profileTable,
+      Item: {
+        profile_id: profileId,
+        profile_name: data.name,
+        profile_nickname: data.name,
+        profile_email: data.email,
+        profile_password: hash,
+        role: 'admin',
+        is_superadmin: false,
+        profile_status: 'active',
+        created_at: new Date().toISOString(),
+      },
+    }));
+    return { message: 'Admin criado com sucesso.', profile_id: profileId };
+  }
+
+  async deleteAdmin(requesterId: string, targetId: string) {
+    if (requesterId === targetId) throw new BadRequestException('Você não pode excluir sua própria conta');
+
+    const requester = await this.db.send(new GetCommand({ TableName: this.profileTable, Key: { profile_id: requesterId } }));
+    if (!requester.Item?.is_superadmin) throw new ForbiddenException('Apenas o superadmin pode excluir outros admins');
+
+    const target = await this.db.send(new GetCommand({ TableName: this.profileTable, Key: { profile_id: targetId } }));
+    if (!target.Item) throw new NotFoundException('Admin não encontrado');
+    if (target.Item.is_superadmin) throw new ForbiddenException('Não é possível excluir o superadmin');
+
+    await this.db.send(new DeleteCommand({ TableName: this.profileTable, Key: { profile_id: targetId } }));
+    return { message: 'Admin excluído.' };
+  }
+
+  // ── Configurações do próprio admin ────────────────────────────────────────
+
+  async updateMyCredentials(adminId: string, data: { email?: string; password?: string; current_password: string }) {
+    const profile = await this.db.send(new GetCommand({ TableName: this.profileTable, Key: { profile_id: adminId } }));
+    if (!profile.Item) throw new NotFoundException('Admin não encontrado');
+
+    const valid = await bcrypt.compare(data.current_password, profile.Item.profile_password);
+    if (!valid) throw new BadRequestException('Senha atual incorreta');
+
+    const updates: string[] = [];
+    const values: Record<string, any> = {};
+
+    if (data.email?.trim()) {
+      const existing = await this.db.send(new ScanCommand({
+        TableName: this.profileTable,
+        FilterExpression: 'profile_email = :email AND profile_id <> :id',
+        ExpressionAttributeValues: { ':email': data.email.trim(), ':id': adminId },
+      }));
+      if (existing.Items?.length) throw new BadRequestException('E-mail já está em uso');
+      updates.push('profile_email = :email');
+      values[':email'] = data.email.trim();
+    }
+
+    if (data.password) {
+      if (data.password.length < 6) throw new BadRequestException('Senha deve ter pelo menos 6 caracteres');
+      updates.push('profile_password = :pwd');
+      values[':pwd'] = await bcrypt.hash(data.password, 10);
+    }
+
+    if (!updates.length) throw new BadRequestException('Nenhum campo para atualizar');
+
+    await this.db.send(new UpdateCommand({
+      TableName: this.profileTable,
+      Key: { profile_id: adminId },
+      UpdateExpression: `SET ${updates.join(', ')}`,
+      ExpressionAttributeValues: values,
+    }));
+
+    return { message: 'Credenciais atualizadas com sucesso.' };
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   async getPostReports(postId: string) {
     const result = await this.db.send(new QueryCommand({
@@ -114,8 +247,6 @@ export class AdminService {
     }));
     return result.Items || [];
   }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
 
   private async findPost(postId: string) {
     const result = await this.db.send(new QueryCommand({
