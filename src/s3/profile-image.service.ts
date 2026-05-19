@@ -26,6 +26,7 @@ export class ProfileImageService {
         Key: key,
         Body: convertedBuffer,
         ContentType: 'image/jpeg',
+        ACL: 'public-read',
       }),
     );
 

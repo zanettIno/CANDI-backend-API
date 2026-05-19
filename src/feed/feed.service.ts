@@ -97,6 +97,7 @@ export class FeedService {
             Key: fileKey,
             Body: processed.buffer,
             ContentType: processed.mimetype,
+            ACL: 'public-read',
           }),
         );
         const region = process.env.AWS_S3_REGION || process.env.AWS_REGION;
