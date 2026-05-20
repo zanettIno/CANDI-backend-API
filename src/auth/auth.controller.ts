@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Body, Res, Get, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Patch, Delete, Body, Res, Get, Param, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthDto, RefreshDto, TokenVerifyDto } from './auth.dto';
 import { AuthGuard } from './auth.guard';
@@ -85,6 +85,18 @@ async googleLogin(@Body() body, @Res({ passthrough: true }) res) {
   @UseGuards(AuthGuard)
   getSupportNetwork(@Req() req) {
     return this.authService.getMySupportNetwork(req.user.profile_id);
+  }
+
+  @Delete('support-network/:support_id')
+  @UseGuards(AuthGuard)
+  removeSupportMember(@Req() req, @Param('support_id') support_id: string) {
+    return this.authService.removeSupportMember(req.user.profile_id, support_id);
+  }
+
+  @Delete('invite/:invite_token')
+  @UseGuards(AuthGuard)
+  revokeInvite(@Req() req, @Param('invite_token') invite_token: string) {
+    return this.authService.revokeInvite(req.user.profile_id, invite_token);
   }
 
   @Get('my-patient')

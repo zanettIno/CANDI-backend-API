@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Req, Param } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Body, UseGuards, Req, Param } from '@nestjs/common';
 import { MilestonesService } from './milestones.service';
 import { AuthGuard } from '../../auth/auth.guard';
 
@@ -55,6 +55,23 @@ export class MilestonesController {
     }
 
     return this.service.listMilestones(profileId);
+  }
+
+  @Patch(':id')
+  async updateMilestone(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() body: { title?: string; description?: string; date?: string; type?: 'fixed' | 'custom' },
+  ) {
+    return this.service.updateMilestone(id, req.user.profile_id, body);
+  }
+
+  @Delete(':id')
+  async deleteMilestone(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.service.deleteMilestone(id, req.user.profile_id);
   }
 
   @Get(':profile_id')

@@ -1,5 +1,5 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, GetCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
 
 // Interface para o payload do create
@@ -70,8 +70,18 @@ export class MedicinesService {
     return items;
   }
 
-  // Métodos placeholder
-  findOne(id: number) { /* ... */ }
-  update(id: number, payload: any) { /* ... */ }
-  remove(id: number) { /* ... */ }
+  async delete(profileId: string, medicineId: string) {
+    const existing = await this.db.send(new GetCommand({
+      TableName: this.tableName,
+      Key: { medicine_id: medicineId },
+    }));
+    if (!existing.Item || existing.Item.profile_id !== profileId) {
+      throw new NotFoundException('Medicamento não encontrado');
+    }
+    await this.db.send(new DeleteCommand({
+      TableName: this.tableName,
+      Key: { medicine_id: medicineId },
+    }));
+    return { message: 'Medicamento excluído' };
+  }
 }
