@@ -105,6 +105,7 @@ export class AdminService {
 
     return posts
       .filter(Boolean)
+      .filter((p: any) => p!.status !== 'approved' && p!.status !== 'removed')
       .sort((a, b) => (b!.reports.length) - (a!.reports.length));
   }
 
@@ -116,6 +117,7 @@ export class AdminService {
       ExpressionAttributeNames: { '#s': 'status' },
       ExpressionAttributeValues: { ':approved': 'approved', ':zero': 0, ':now': new Date().toISOString() },
     }));
+    await this.deleteReportsForPost(postId);
     return { message: 'Publicação restaurada e marcada como aprovada (imune a denúncias).' };
   }
 
@@ -149,6 +151,7 @@ export class AdminService {
       }));
     }
 
+    await this.deleteReportsForPost(postId);
     return { message: 'Publicação removida.', author_banned: bannedCount >= this.BAN_THRESHOLD, banned_posts_count: bannedCount };
   }
 
@@ -189,10 +192,11 @@ export class AdminService {
   }
 
   async createAdmin(data: { name: string; email: string; password: string }) {
+    const email = data.email.toLowerCase().trim();
     const existing = await this.db.send(new ScanCommand({
       TableName: this.profileTable,
       FilterExpression: 'profile_email = :email',
-      ExpressionAttributeValues: { ':email': data.email },
+      ExpressionAttributeValues: { ':email': email },
     }));
     if (existing.Items?.length) throw new BadRequestException('E-mail já cadastrado');
 
@@ -204,7 +208,7 @@ export class AdminService {
         profile_id: profileId,
         profile_name: data.name,
         profile_nickname: data.name,
-        profile_email: data.email,
+        profile_email: email,
         profile_password: hash,
         role: 'admin',
         is_superadmin: false,
@@ -279,6 +283,20 @@ export class AdminService {
       ExpressionAttributeValues: { ':pid': postId },
     }));
     return result.Items || [];
+  }
+
+  private async deleteReportsForPost(postId: string) {
+    const result = await this.db.send(new QueryCommand({
+      TableName: this.reportsTable,
+      KeyConditionExpression: 'post_id = :pid',
+      ExpressionAttributeValues: { ':pid': postId },
+    }));
+    await Promise.all((result.Items || []).map(r =>
+      this.db.send(new DeleteCommand({
+        TableName: this.reportsTable,
+        Key: { post_id: postId, reporter_id: r.reporter_id },
+      }))
+    ));
   }
 
   private async findPost(postId: string) {

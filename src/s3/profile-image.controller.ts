@@ -14,19 +14,18 @@ export class ProfileImageController {
   @UseGuards(AuthGuard)
   @Post('upload')
   async uploadProfileImage(@Req() req: AuthenticatedRequest) {
-    const data = await req.file();
-    if (!data) {
+    const body = req.body as any;
+    const fileField = body?.file;
+
+    if (!fileField?._buf) {
       throw new BadRequestException('Arquivo não enviado');
     }
 
-    const buffer = await data.toBuffer();
-    const profileId = req.user.profile_id; 
+    const buffer = Buffer.from(fileField._buf);
+    const mimetype = fileField.mimetype || 'image/jpeg';
+    const profileId = req.user.profile_id;
 
-    return this.profileImageService.uploadProfileImage(
-      profileId,
-      buffer,
-      data.mimetype,
-    );
+    return this.profileImageService.uploadProfileImage(profileId, buffer, mimetype);
   }
 
   @UseGuards(AuthGuard)

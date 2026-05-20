@@ -97,7 +97,6 @@ export class FeedService {
             Key: fileKey,
             Body: processed.buffer,
             ContentType: processed.mimetype,
-            ACL: 'public-read',
           }),
         );
         const region = process.env.AWS_S3_REGION || process.env.AWS_REGION;
@@ -112,6 +111,7 @@ export class FeedService {
       post_id: postId,
       profile_id: user.profile_id,
       profile_name: user.profile_name || user.profile_email,
+      ...(user.profile_nickname && { profile_nickname: user.profile_nickname }),
       content: dto.content,
       ...(fileUrl && { file_url: fileUrl }),
       created_at: new Date().toISOString(),

@@ -704,7 +704,6 @@ export class CommunityService {
       Key: cleanKey,
       Body: finalBuffer,
       ContentType: mimetype,
-      ACL: 'public-read',
     }));
 
     const region = process.env.AWS_S3_REGION || process.env.AWS_REGION;

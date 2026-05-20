@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException, UnauthorizedException, NotFoundException, ForbiddenException, Inject } from '@nestjs/common';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, QueryCommand, UpdateCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import * as nodemailer from 'nodemailer';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
@@ -25,11 +25,12 @@ export class AuthService {
     cancer_type_id: number;
     adminSecret?: string;
   }) {
+    const email = user.email.toLowerCase().trim();
     const existing = await this.db.send(
       new ScanCommand({
         TableName: this.tableName,
         FilterExpression: 'profile_email = :email',
-        ExpressionAttributeValues: { ':email': user.email },
+        ExpressionAttributeValues: { ':email': email },
       }),
     );
 
@@ -44,7 +45,7 @@ export class AuthService {
       profile_id: randomUUID(),
       profile_name: user.name,
       profile_nickname: user.nickname,
-      profile_email: user.email,
+      profile_email: email,
       profile_password: hashedPassword,
       profile_birth_date: user.birth_date,
       cancer_type_id: user.cancer_type_id,
@@ -62,11 +63,12 @@ export class AuthService {
 
   // ==================== LOGIN ====================
   async login(data: AuthDto, res: any) {
+    const email = data.email.toLowerCase().trim();
     const result = await this.db.send(
       new ScanCommand({
         TableName: this.tableName,
         FilterExpression: 'profile_email = :email',
-        ExpressionAttributeValues: { ':email': data.email },
+        ExpressionAttributeValues: { ':email': email },
       }),
     );
 
@@ -112,20 +114,39 @@ export class AuthService {
   }
 
   // ==================== REFRESH TOKEN ====================
-async refreshTokens(refreshToken: string, res) {
-  const payload = this.jwtService.verify(refreshToken);
+  async refreshTokens(refreshToken: string, res) {
+    let payload: any;
+    try {
+      payload = this.jwtService.verify(refreshToken, { secret: process.env.REFRESH_TOKEN_SECRET });
+    } catch {
+      throw new UnauthorizedException('Refresh token inválido ou expirado');
+    }
 
-  const newAccessToken = this.jwtService.sign({ sub: payload.sub }, { expiresIn: '12h' });
-  const newRefreshToken = this.jwtService.sign({ sub: payload.sub }, { expiresIn: '7d' });
+    const isProduction = process.env.NODE_ENV === 'production';
 
-  res.cookie('ACCESS_TOKEN', newAccessToken, { httpOnly: true });
-  res.cookie('REFRESH_TOKEN', newRefreshToken, { httpOnly: true });
+    const newAccessToken = await this.jwtService.signAsync(
+      { id: payload.id, email: payload.email },
+      { secret: process.env.ACCESS_TOKEN_SECRET, expiresIn: '12h' },
+    );
+    const newRefreshToken = await this.jwtService.signAsync(
+      { id: payload.id, email: payload.email },
+      { secret: process.env.REFRESH_TOKEN_SECRET, expiresIn: '7d' },
+    );
 
-  return {
-    accessToken: newAccessToken,
-    refreshToken: newRefreshToken,
-  };
-}
+    res.cookie('ACCESS_TOKEN', newAccessToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+      maxAge: 12 * 60 * 60 * 1000,
+    });
+    res.cookie('REFRESH_TOKEN', newRefreshToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+    });
+
+    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+  }
 
   // ==================== GET USER PROFILE ====================
   async getProfile(userId: string) {
@@ -304,12 +325,13 @@ async refreshTokens(refreshToken: string, res) {
     relationship: string; // relação com o paciente: familiar, amigo, cônjuge, cuidador, outro
   }) {
     const invite = await this.getInvite(body.invite_token);
+    const supportEmail = body.email.toLowerCase().trim();
 
     // Verifica se já existe conta com esse e-mail
     const existing = await this.db.send(new ScanCommand({
       TableName: this.tableName,
       FilterExpression: 'profile_email = :email',
-      ExpressionAttributeValues: { ':email': body.email },
+      ExpressionAttributeValues: { ':email': supportEmail },
     }));
 
     let profileId: string;
@@ -332,7 +354,7 @@ async refreshTokens(refreshToken: string, res) {
           profile_id: profileId,
           profile_name: body.name,
           profile_nickname: body.name,
-          profile_email: body.email,
+          profile_email: supportEmail,
           profile_phone: body.phone,
           profile_password: hashedPassword,
           role: 'support',
@@ -355,7 +377,7 @@ async refreshTokens(refreshToken: string, res) {
         patient_id: invite.patient_id,
         support_id: profileId,
         support_name: body.name,
-        support_email: body.email,
+        support_email: supportEmail,
         support_phone: body.phone,
         patient_name: invite.patient_name,
         relationship: body.relationship,
@@ -398,6 +420,39 @@ async refreshTokens(refreshToken: string, res) {
       ExpressionAttributeValues: { ':pid': patientId, ':active': 'active' },
     }));
     return result.Items || [];
+  }
+
+  async removeSupportMember(patientId: string, supportId: string) {
+    const result = await this.db.send(new QueryCommand({
+      TableName: 'CANDISupportLinks',
+      KeyConditionExpression: 'patient_id = :pid',
+      FilterExpression: 'support_id = :sid',
+      ExpressionAttributeValues: { ':pid': patientId, ':sid': supportId },
+    }));
+    const link = result.Items?.[0];
+    if (!link) throw new NotFoundException('Membro não encontrado na rede de apoio');
+    await this.db.send(new DeleteCommand({
+      TableName: 'CANDISupportLinks',
+      Key: { patient_id: patientId, support_id: link.support_id ?? supportId },
+    }));
+    return { message: 'Membro removido da rede de apoio' };
+  }
+
+  async revokeInvite(patientId: string, inviteToken: string) {
+    const result = await this.db.send(new QueryCommand({
+      TableName: 'CANDIInvites',
+      IndexName: 'ByPatientGSI',
+      KeyConditionExpression: 'patient_id = :pid',
+      FilterExpression: 'invite_token = :tok',
+      ExpressionAttributeValues: { ':pid': patientId, ':tok': inviteToken },
+    }));
+    const invite = result.Items?.[0];
+    if (!invite) throw new NotFoundException('Convite não encontrado');
+    await this.db.send(new DeleteCommand({
+      TableName: 'CANDIInvites',
+      Key: { invite_token: inviteToken },
+    }));
+    return { message: 'Convite revogado' };
   }
 
   async getMyPatients(supportId: string) {
