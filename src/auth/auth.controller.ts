@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Res, Get, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Patch, Delete, Body, Res, Get, Param, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthDto, RefreshDto, TokenVerifyDto } from './auth.dto';
 import { AuthGuard } from './auth.guard';
@@ -37,5 +37,77 @@ async googleLogin(@Body() body, @Res({ passthrough: true }) res) {
   @Get('me')
   getProfile(@Req() req) {
     return req.user;
+  }
+
+  @Patch('me')
+  @UseGuards(AuthGuard)
+  updateProfile(@Req() req, @Body() body: {
+    profile_name?: string;
+    profile_nickname?: string;
+    profile_birth_date?: string;
+    cancer_type_id?: number;
+  }) {
+    return this.authService.updateProfile(req.user.profile_id, body);
+  }
+
+  // ── Convite rede de apoio ──────────────────────────────────────────────────
+
+  @Post('invite')
+  @UseGuards(AuthGuard)
+  createInvite(@Req() req, @Body() body: { email: string; permissions: string[] }) {
+    return this.authService.createInvite(req.user.profile_id, body);
+  }
+
+  @Get('invite/:token')
+  getInvite(@Param('token') token: string) {
+    return this.authService.getInvite(token);
+  }
+
+  @Post('register-support')
+  registerSupport(@Body() body: {
+    name: string;
+    phone: string;
+    email: string;
+    password: string;
+    invite_token: string;
+    relationship: string;
+  }) {
+    return this.authService.registerSupport(body);
+  }
+
+  @Get('my-invites')
+  @UseGuards(AuthGuard)
+  getMyInvites(@Req() req) {
+    return this.authService.getMyInvites(req.user.profile_id);
+  }
+
+  @Get('support-network')
+  @UseGuards(AuthGuard)
+  getSupportNetwork(@Req() req) {
+    return this.authService.getMySupportNetwork(req.user.profile_id);
+  }
+
+  @Delete('support-network/:support_id')
+  @UseGuards(AuthGuard)
+  removeSupportMember(@Req() req, @Param('support_id') support_id: string) {
+    return this.authService.removeSupportMember(req.user.profile_id, support_id);
+  }
+
+  @Delete('invite/:invite_token')
+  @UseGuards(AuthGuard)
+  revokeInvite(@Req() req, @Param('invite_token') invite_token: string) {
+    return this.authService.revokeInvite(req.user.profile_id, invite_token);
+  }
+
+  @Get('my-patient')
+  @UseGuards(AuthGuard)
+  getMyPatient(@Req() req) {
+    return this.authService.getMyPatient(req.user.profile_id);
+  }
+
+  @Get('my-patients')
+  @UseGuards(AuthGuard)
+  getMyPatients(@Req() req) {
+    return this.authService.getMyPatients(req.user.profile_id);
   }
 }

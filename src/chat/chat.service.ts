@@ -57,6 +57,51 @@ export class ChatService {
   }
 
 
+  /**
+   * Retorna o unread_count do OUTRO participante para indicar se leu ou não.
+   * unread_count = 0 para o outro => ele leu nossas mensagens.
+   */
+  async getReadStatus(myProfileId: string, conversationId: string): Promise<{
+    isRead: boolean;
+    isDelivered: boolean;
+    readUpTo: string | null;
+  }> {
+    if (conversationId.startsWith('GROUP#')) return { isRead: false, isDelivered: false, readUpTo: null };
+    const parts = conversationId.split('#');
+    const otherProfileId = parts.find(id => id !== myProfileId);
+    if (!otherProfileId) return { isRead: false, isDelivered: false, readUpTo: null };
+
+    const result = await this.db.send(new GetCommand({
+      TableName: this.conversationsTable,
+      Key: { profile_id: otherProfileId, conversation_id: conversationId },
+    }));
+
+    if (!result.Item) return { isRead: false, isDelivered: false, readUpTo: null };
+
+    const hasHistory = !!result.Item.last_message_timestamp;
+    const isDelivered = hasHistory;
+    // readUpTo: quando o outro usuario leu pela ultima vez
+    // Permite separar "mensagens lidas antes de readUpTo" de "novas mensagens nao lidas"
+    const readUpTo: string | null = result.Item.last_read_at ?? null;
+    // isRead = true apenas se readUpTo >= ultimo timestamp de mensagem
+    const isRead = isDelivered && !!readUpTo &&
+      readUpTo >= (result.Item.last_message_timestamp ?? '');
+
+    return { isRead, isDelivered, readUpTo };
+  }
+
+  /** Zera unread_count do usuário para esta conversa (chamado pelo ack_read no gateway) */
+  async zeroUnreadCount(profileId: string, conversationId: string) {
+    if (conversationId.startsWith('GROUP#')) return;
+    await this.db.send(new UpdateCommand({
+      TableName: this.conversationsTable,
+      Key: { profile_id: profileId, conversation_id: conversationId },
+      UpdateExpression: 'SET unread_count = :zero, last_read_at = :now',
+      ExpressionAttributeValues: { ':zero': 0, ':now': new Date().toISOString() },
+      ConditionExpression: 'attribute_exists(profile_id)',
+    })).catch(() => {});
+  }
+
   async getInbox(profileId: string) {
     const result = await this.db.send(
       new QueryCommand({
@@ -72,7 +117,9 @@ export class ChatService {
 
 
   async getMessages(profileId: string, conversationId: string) {
-    await this.checkUserInConversation(profileId, conversationId);
+    if (!conversationId.startsWith('GROUP#')) {
+      await this.checkUserInConversation(profileId, conversationId);
+    }
 
     const result = await this.db.send(
       new QueryCommand({
@@ -83,18 +130,21 @@ export class ChatService {
       }),
     );
     
-    // Zera o contador de não lidas para o usuário logado
-    await this.db.send(new UpdateCommand({
-        TableName: this.conversationsTable,
-        Key: { profile_id: profileId, conversation_id: conversationId },
-        UpdateExpression: 'SET unread_count = :zero',
-        ExpressionAttributeValues: { ':zero': 0 },
-        ConditionExpression: 'attribute_exists(profile_id)'
-    })).catch(err => {
-      if (err.name !== 'ConditionalCheckFailedException') {
-        console.error("Erro ao zerar contador:", err);
-      }
-    });
+    // Zera contador de não lidas e grava last_read_at (não se aplica a chat de grupo)
+    if (!conversationId.startsWith('GROUP#')) {
+      const now = new Date().toISOString();
+      await this.db.send(new UpdateCommand({
+          TableName: this.conversationsTable,
+          Key: { profile_id: profileId, conversation_id: conversationId },
+          UpdateExpression: 'SET unread_count = :zero, last_read_at = :now',
+          ExpressionAttributeValues: { ':zero': 0, ':now': now },
+          ConditionExpression: 'attribute_exists(profile_id)'
+      })).catch(err => {
+        if (err.name !== 'ConditionalCheckFailedException') {
+          console.error("Erro ao zerar contador:", err);
+        }
+      });
+    }
 
     return result.Items || [];
   }
@@ -161,7 +211,20 @@ export class ChatService {
   async sendMessage(user: AuthenticatedUser, conversationId: string, messageContent: string) {
     const { profile_id, profile_name, profile_nickname } = user;
     const now = new Date().toISOString();
-    
+
+    // Chat de grupo: não tem entrada em CANDIUserConversations, só persiste a mensagem
+    if (conversationId.startsWith('GROUP#')) {
+      const newMessage = {
+        conversation_id: conversationId,
+        timestamp: `${now}#${randomUUID()}`,
+        sender_id: profile_id,
+        sender_name: profile_nickname || profile_name || (user.profile_email?.split('@')[0] ?? 'Usuário'),
+        message_content: messageContent,
+      };
+      await this.db.send(new PutCommand({ TableName: this.messagesTable, Item: newMessage }));
+      return newMessage;
+    }
+
     const conversationEntry = await this.checkUserInConversation(profile_id, conversationId);
     const otherProfileId = conversationEntry.other_user_id;
 

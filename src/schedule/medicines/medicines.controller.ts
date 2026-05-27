@@ -28,9 +28,13 @@ export class MedicinesController {
     return this.medicinesService.create(req.user, body);
   }
 
-  @Get() // 4. A rota agora é mais simples, não precisa do e-mail
+  @Get()
   findAll(@Req() req: AuthenticatedRequest) {
-    // Usamos o e-mail do usuário autenticado para fazer a busca
     return this.medicinesService.findAllByEmail(req.user.profile_email);
+  }
+
+  @Delete(':id')
+  delete(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.medicinesService.delete(req.user.profile_id, id);
   }
 }

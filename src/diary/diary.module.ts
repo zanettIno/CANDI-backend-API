@@ -13,5 +13,6 @@ import { DynamoDBModule } from '../dynamodb/dynamodb.module'; // 🔹 importa o 
   ],
   controllers: [DiaryController],
   providers: [DiaryService],
+  exports: [DiaryService],
 })
 export class DiaryModule {}

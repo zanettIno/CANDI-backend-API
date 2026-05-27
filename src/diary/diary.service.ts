@@ -17,7 +17,7 @@ import { Readable } from 'stream';
 
 @Injectable()
 export class DiaryService {
-  private readonly bucketName = process.env.AWS_S3_BUCKET_FILE || 'candi-file-uploads';
+  private readonly bucketName = process.env.AWS_S3_BUCKET_FILE || 'awscandi-file-uploads';
   private readonly folderName = 'diary/';
 
   constructor(private readonly s3Provider: S3Provider) {}
@@ -38,20 +38,26 @@ export class DiaryService {
   async createDiary(userId: string, date: string, content: string) {
     const key = this.getKey(userId, date);
 
+    // Verifica se já existe — separado do throw para evitar que BadRequestException
+    // seja capturada pelo catch do S3 e vire InternalServerError
+    let exists = false;
     try {
-      // verificar se já existe
       await this.s3Provider.client.send(
-        new HeadObjectCommand({
-          Bucket: this.bucketName,
-          Key: key,
-        }),
+        new HeadObjectCommand({ Bucket: this.bucketName, Key: key }),
       );
-      throw new BadRequestException('Já existe um diário para esta data');
+      exists = true;
     } catch (err: any) {
-      if (err.name !== 'NotFound' && err.$metadata?.httpStatusCode !== 404) {
-        throw new InternalServerErrorException('Erro ao verificar diário existente');
+      const status = err.$metadata?.httpStatusCode;
+      const isNotFound = status === 404 || err.name === 'NotFound' || err.name === 'NoSuchKey';
+      if (!isNotFound) {
+        // Inclui o código/nome do erro para facilitar diagnóstico
+        throw new InternalServerErrorException(
+          `Erro ao verificar diário existente (${err.name ?? status ?? 'unknown'})`,
+        );
       }
     }
+
+    if (exists) throw new BadRequestException('Já existe um diário para esta data');
 
     try {
       await this.s3Provider.client.send(
